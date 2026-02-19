@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Property Chain Configurability Test</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: monospace; font-size: 13px; margin: 20px; background: #fafafa; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 15px; margin-top: 0; }
+  .chain { margin: 20px 0; border: 1px solid #ccc; padding: 15px; background: #fff; }
+  .secure { border-left: 4px solid #2a2; }
+  .insecure { border-left: 4px solid #c22; }
+  .unknown { border-left: 4px solid #aa0; }
+  .pass { color: #2a2; font-weight: bold; }
+  .fail { color: #c22; font-weight: bold; }
+  .warn { color: #a80; font-weight: bold; }
+  .info { color: #666; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+  td, th { border: 1px solid #ddd; padding: 4px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  .json { white-space: pre-wrap; word-break: break-all; max-width: 500px; font-size: 11px; }
+  .summary { margin: 20px 0; padding: 15px; border: 2px solid #333; background: #fff; }
+  .summary h2 { font-size: 16px; }
+  .detail { font-size: 11px; color: #666; margin-left: 20px; }
+  #ua { background: #eef; padding: 10px; margin-bottom: 20px; word-break: break-all; }
+  .test-group { margin: 8px 0; }
+  .test-group summary { cursor: pointer; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Property Chain Configurability Test</h1>
+<p>Tests whether the property chains needed for verified clean-context creation consist
+of non-configurable properties that a page-level JS attacker cannot replace.</p>
+<p><strong>Goal:</strong> Find at least one complete chain from the global scope to a
+clean JS execution context where every link is a non-configurable accessor (getter)
+or non-configurable + non-writable data property.</p>
+
+<div id="ua"></div>
+<div id="summary"></div>
+<div id="output"></div>
+
+<script>
+'use strict';
+
+var output = document.getElementById('output');
+var summaryEl = document.getElementById('summary');
+
+// Display browser info
+document.getElementById('ua').innerHTML =
+  '<strong>User Agent:</strong> ' + navigator.userAgent + '<br>' +
+  '<strong>Platform:</strong> ' + navigator.platform + '<br>' +
+  '<strong>Date:</strong> ' + new Date().toISOString();
+
+// ============================================================
+// Utility functions
+// ============================================================
+
+function describeDescriptor(desc) {
+  if (!desc) return null;
+  var result = {__proto__: null};
+  result.configurable = desc.configurable;
+  result.enumerable = desc.enumerable;
+  if ('value' in desc) {
+    result.type = 'data';
+    result.writable = desc.writable;
+    result.valueType = typeof desc.value;
+    if (typeof desc.value === 'function') {
+      try {
+        result.valueToString = Function.prototype.toString.call(desc.value).substring(0, 120);
+      } catch(e) {
+        result.valueToString = '(toString threw: ' + e.message + ')';
+      }
+    }
+  } else {
+    result.type = 'accessor';
+    result.hasGetter = typeof desc.get === 'function';
+    result.hasSetter = typeof desc.set === 'function';
+    if (desc.get) {
+      try {
+        result.getterToString = Function.prototype.toString.call(desc.get).substring(0, 120);
+      } catch(e) {
+        result.getterToString = '(toString threw: ' + e.message + ')';
+      }
+    }
+  }
+  return result;
+}
+
+function findPropertyOwner(obj, prop) {
+  var current = obj;
+  var depth = 0;
+  while (current !== null && current !== undefined && depth < 20) {
+    if (Object.prototype.hasOwnProperty.call(current, prop)) {
+      var name = '(unknown)';
+      try {
+        if (current.constructor && current.constructor.name) {
+          name = current.constructor.name + '.prototype';
+        }
+        if (current === window) name = 'window (global)';
+        if (current === document) name = 'document';
+      } catch(e) {}
+      return { owner: current, name: name, depth: depth };
+    }
+    try {
+      current = Object.getPrototypeOf(current);
+    } catch(e) {
+      break;
+    }
+    depth++;
+  }
+  return null;
+}
+
+function testProperty(obj, prop, objName) {
+  var result = {__proto__: null};
+  result.property = objName + '.' + prop;
+
+  // Find where the property lives in the prototype chain
+  var ownerInfo = findPropertyOwner(obj, prop);
+  if (!ownerInfo) {
+    result.status = 'NOT_FOUND';
+    result.verdict = 'fail';
+    return result;
+  }
+  result.ownedBy = ownerInfo.name;
+  result.protoDepth = ownerInfo.depth;
+
+  // Get property descriptor from the owning object
+  var desc;
+  try {
+    desc = Object.getOwnPropertyDescriptor(ownerInfo.owner, prop);
+  } catch(e) {
+    result.descriptorError = e.message;
+    result.verdict = 'fail';
+    return result;
+  }
+  result.descriptor = describeDescriptor(desc);
+
+  if (!desc) {
+    result.status = 'NO_DESCRIPTOR';
+    result.verdict = 'fail';
+    return result;
+  }
+
+  // Core configurability check
+  result.configurable = desc.configurable;
+  result.isAccessor = !('value' in desc);
+
+  if (desc.configurable === false) {
+    if (result.isAccessor) {
+      // Non-configurable accessor: getter cannot be replaced. BEST CASE.
+      result.verdict = 'pass';
+      result.reason = 'Non-configurable accessor. Getter cannot be replaced by any JS code.';
+    } else if (desc.writable === false) {
+      // Non-configurable, non-writable data: value cannot be changed. GOOD.
+      result.verdict = 'pass';
+      result.reason = 'Non-configurable + non-writable data property. Value is frozen.';
+    } else {
+      // Non-configurable but writable: attacker can change value via assignment!
+      result.verdict = 'fail';
+      result.reason = 'Non-configurable BUT writable. Attacker can change value via assignment.';
+    }
+  } else {
+    // Configurable: attacker can redefine entirely
+    result.verdict = 'fail';
+    result.reason = 'Configurable. Attacker can redefine via Object.defineProperty.';
+  }
+
+  // Test: can delete succeed? (should return false for non-configurable own properties)
+  if (ownerInfo.depth === 0) {
+    // Own property on the target object
+    try {
+      var deleteResult = false;
+      // We won't actually delete -- just note what we expect
+      result.deleteExpected = desc.configurable ? 'true (configurable)' : 'false (non-configurable)';
+    } catch(e) {
+      result.deleteError = e.message;
+    }
+  } else {
+    result.deleteNote = 'Property is inherited (depth ' + ownerInfo.depth + '), delete on obj returns true (deletes nothing, reveals prototype)';
+  }
+
+  // Test: shadow via assignment, then delete to restore
+  if (result.isAccessor && !desc.configurable) {
+    // Can the attacker shadow with assignment?
+    // For [Replaceable] IDL attributes, assignment creates an own data property
+    // Let's check if there's a setter
+    result.hasSetter = typeof desc.set === 'function';
+    if (desc.set) {
+      result.shadowNote = 'Has setter. Assignment invokes setter (may or may not create shadow).';
+    } else {
+      result.shadowNote = 'No setter. Assignment in strict mode throws TypeError (cannot shadow).';
+    }
+  }
+
+  return result;
+}
+
+function testDeleteRestore(obj, prop, objName) {
+  // Actually test the delete+restore pattern on a copy/safe property
+  // We'll test on the PROTOTYPE to avoid modifying the actual object
+  var result = {__proto__: null};
+  result.property = objName + '.' + prop;
+
+  var ownerInfo = findPropertyOwner(obj, prop);
+  if (!ownerInfo) {
+    result.status = 'not found';
+    return result;
+  }
+
+  // Test 1: Can attacker shadow via Object.defineProperty on the object itself?
+  try {
+    Object.defineProperty(obj, prop, { value: 'ATTACKER_VALUE', configurable: true, writable: true });
+    result.canDefineOwn = true;
+    result.afterDefine = obj[prop] === 'ATTACKER_VALUE' ? 'shadow active' : 'shadow failed';
+
+    // Now delete the shadow
+    var delResult = delete obj[prop];
+    result.deleteResult = delResult;
+    result.afterDelete = typeof obj[prop];
+
+    // Is the original restored?
+    result.restored = obj[prop] !== 'ATTACKER_VALUE';
+  } catch(e) {
+    result.canDefineOwn = false;
+    result.defineError = e.message;
+  }
+
+  return result;
+}
+
+// ============================================================
+// Define all candidate chains
+// ============================================================
+
+var chains = [];
+
+// Chain 1: iframe via document.createElement
+chains.push({
+  name: 'Chain 1: iframe via document.createElement',
+  description: 'window.document → Document.prototype.createElement → iframe.contentWindow',
+  steps: [
+    { obj: function() { return window; }, prop: 'document', objName: 'window' },
+    { obj: function() { return Document.prototype; }, prop: 'createElement', objName: 'Document.prototype' },
+    // We also need to check that the iframe element's contentWindow is non-configurable
+    { obj: function() { return HTMLIFrameElement.prototype; }, prop: 'contentWindow', objName: 'HTMLIFrameElement.prototype' },
+  ]
+});
+
+// Chain 1b: Also check the intermediate prototype for document
+chains.push({
+  name: 'Chain 1b: document property ownership',
+  description: 'Check where "document" actually lives (global vs prototype)',
+  steps: [
+    { obj: function() { return window; }, prop: 'document', objName: 'window' },
+    // Check if it's on Window.prototype instead
+    { obj: function() { return Window.prototype; }, prop: 'document', objName: 'Window.prototype',
+      optional: true },
+  ]
+});
+
+// Chain 2: window.open
+chains.push({
+  name: 'Chain 2: window.open',
+  description: 'window.open("about:blank") → new Window',
+  steps: [
+    { obj: function() { return window; }, prop: 'open', objName: 'window' },
+    { obj: function() { return Window.prototype; }, prop: 'open', objName: 'Window.prototype',
+      optional: true },
+  ]
+});
+
+// Chain 3: Worker
+chains.push({
+  name: 'Chain 3: Web Worker',
+  description: 'new Worker(blobUrl) -- separate JS context',
+  steps: [
+    { obj: function() { return window; }, prop: 'Worker', objName: 'window' },
+    { obj: function() { return window; }, prop: 'Blob', objName: 'window' },
+    { obj: function() { return URL; }, prop: 'createObjectURL', objName: 'URL' },
+  ]
+});
+
+// Chain 4: DOMImplementation
+chains.push({
+  name: 'Chain 4: document.implementation.createHTMLDocument',
+  description: 'document.implementation → createHTMLDocument',
+  steps: [
+    { obj: function() { return document; }, prop: 'implementation', objName: 'document' },
+    { obj: function() { return Document.prototype; }, prop: 'implementation', objName: 'Document.prototype',
+      optional: true },
+    { obj: function() { return DOMImplementation.prototype; }, prop: 'createHTMLDocument', objName: 'DOMImplementation.prototype' },
+  ]
+});
+
+// Chain 5: innerHTML-based iframe creation
+chains.push({
+  name: 'Chain 5: innerHTML-based iframe creation',
+  description: 'document.body.innerHTML → getElementById → contentWindow',
+  steps: [
+    { obj: function() { return document; }, prop: 'body', objName: 'document' },
+    { obj: function() { return Document.prototype; }, prop: 'body', objName: 'Document.prototype',
+      optional: true },
+    { obj: function() { return Element.prototype; }, prop: 'innerHTML', objName: 'Element.prototype' },
+    { obj: function() { return Document.prototype; }, prop: 'getElementById', objName: 'Document.prototype' },
+    { obj: function() { return HTMLIFrameElement.prototype; }, prop: 'contentWindow', objName: 'HTMLIFrameElement.prototype' },
+  ]
+});
+
+// Chain 6: eval / Function constructor accessibility
+chains.push({
+  name: 'Chain 6: Code execution mechanisms',
+  description: 'eval, Function constructor -- for injecting verified code',
+  steps: [
+    { obj: function() { return window; }, prop: 'eval', objName: 'window' },
+    { obj: function() { return window; }, prop: 'Function', objName: 'window' },
+  ]
+});
+
+// Chain 7: Crypto APIs (for hash verification in clean context)
+chains.push({
+  name: 'Chain 7: Crypto APIs (clean context usage)',
+  description: 'crypto.subtle.digest -- for hash verification in the clean context',
+  steps: [
+    { obj: function() { return window; }, prop: 'crypto', objName: 'window' },
+    { obj: function() { return window.crypto; }, prop: 'subtle', objName: 'crypto' },
+    { obj: function() { return SubtleCrypto.prototype; }, prop: 'digest', objName: 'SubtleCrypto.prototype' },
+  ]
+});
+
+// Chain 8: IndexedDB (storage in clean context)
+chains.push({
+  name: 'Chain 8: IndexedDB (storage)',
+  description: 'indexedDB.open -- for cached app storage',
+  steps: [
+    { obj: function() { return window; }, prop: 'indexedDB', objName: 'window' },
+    { obj: function() { return IDBFactory.prototype; }, prop: 'open', objName: 'IDBFactory.prototype' },
+  ]
+});
+
+// Chain 9: fetch API
+chains.push({
+  name: 'Chain 9: fetch (network)',
+  description: 'fetch() -- for loading bootstrap from network',
+  steps: [
+    { obj: function() { return window; }, prop: 'fetch', objName: 'window' },
+    { obj: function() { return Window.prototype; }, prop: 'fetch', objName: 'Window.prototype',
+      optional: true },
+  ]
+});
+
+// Chain 10: Additional context creation via srcdoc
+chains.push({
+  name: 'Chain 10: iframe srcdoc attribute',
+  description: 'iframe.srcdoc -- alternative injection into iframe',
+  steps: [
+    { obj: function() { return HTMLIFrameElement.prototype; }, prop: 'srcdoc', objName: 'HTMLIFrameElement.prototype' },
+    { obj: function() { return HTMLIFrameElement.prototype; }, prop: 'src', objName: 'HTMLIFrameElement.prototype' },
+  ]
+});
+
+// Chain 11: Node.appendChild (needed to activate iframe)
+chains.push({
+  name: 'Chain 11: DOM insertion (needed to activate iframe)',
+  description: 'Node.prototype.appendChild -- required to get contentWindow',
+  steps: [
+    { obj: function() { return Node.prototype; }, prop: 'appendChild', objName: 'Node.prototype' },
+    { obj: function() { return Element.prototype; }, prop: 'append', objName: 'Element.prototype',
+      optional: true },
+  ]
+});
+
+// ============================================================
+// Additional important properties to test
+// ============================================================
+
+chains.push({
+  name: 'Supplemental: Key prototype properties',
+  description: 'Function.prototype.toString, Object.getOwnPropertyDescriptor, etc.',
+  steps: [
+    { obj: function() { return Function.prototype; }, prop: 'toString', objName: 'Function.prototype' },
+    { obj: function() { return Function.prototype; }, prop: 'call', objName: 'Function.prototype' },
+    { obj: function() { return Function.prototype; }, prop: 'apply', objName: 'Function.prototype' },
+    { obj: function() { return Function.prototype; }, prop: 'bind', objName: 'Function.prototype' },
+    { obj: function() { return Object; }, prop: 'getOwnPropertyDescriptor', objName: 'Object' },
+    { obj: function() { return Object; }, prop: 'defineProperty', objName: 'Object' },
+    { obj: function() { return Object; }, prop: 'getPrototypeOf', objName: 'Object' },
+    { obj: function() { return Object.prototype; }, prop: 'hasOwnProperty', objName: 'Object.prototype' },
+    { obj: function() { return Object.prototype; }, prop: '__proto__', objName: 'Object.prototype' },
+  ]
+});
+
+// ============================================================
+// Run all tests
+// ============================================================
+
+var allResults = [];
+var chainSummaries = [];
+
+chains.forEach(function(chain) {
+  var chainDiv = document.createElement('div');
+  chainDiv.className = 'chain';
+
+  var h2 = document.createElement('h2');
+  h2.textContent = chain.name;
+  chainDiv.appendChild(h2);
+
+  var desc = document.createElement('p');
+  desc.className = 'info';
+  desc.textContent = chain.description;
+  chainDiv.appendChild(desc);
+
+  var table = document.createElement('table');
+  var thead = document.createElement('thead');
+  thead.innerHTML =
+    '<tr><th>Property</th><th>Owned By</th><th>Type</th><th>Configurable</th>' +
+    '<th>Writable/Setter</th><th>Verdict</th><th>Details</th></tr>';
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  var chainAllPass = true;
+  var chainHasOptionalOnly = true;
+
+  chain.steps.forEach(function(step) {
+    var obj;
+    try {
+      obj = step.obj();
+    } catch(e) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + step.objName + '.' + step.prop + '</td>' +
+        '<td colspan="6" class="fail">Error accessing object: ' + e.message + '</td>';
+      tbody.appendChild(tr);
+      if (!step.optional) chainAllPass = false;
+      return;
+    }
+
+    if (obj === null || obj === undefined) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + step.objName + '.' + step.prop + '</td>' +
+        '<td colspan="6" class="warn">Object is null/undefined</td>';
+      tbody.appendChild(tr);
+      if (!step.optional) chainAllPass = false;
+      return;
+    }
+
+    var result = testProperty(obj, step.prop, step.objName);
+    result.optional = !!step.optional;
+    allResults.push(result);
+
+    var tr = document.createElement('tr');
+    var verdictClass = result.verdict === 'pass' ? 'pass' :
+                       result.verdict === 'fail' ? 'fail' : 'warn';
+
+    var detailsHtml = result.reason || '';
+    if (result.shadowNote) detailsHtml += '<br><span class="info">' + result.shadowNote + '</span>';
+    if (result.deleteNote) detailsHtml += '<br><span class="info">' + result.deleteNote + '</span>';
+
+    var writableInfo = '';
+    if (result.isAccessor) {
+      writableInfo = result.descriptor && result.descriptor.hasSetter ? 'Has setter' : 'No setter (readonly)';
+    } else if (result.descriptor) {
+      writableInfo = result.descriptor.writable ? '<span class="fail">writable</span>' : '<span class="pass">non-writable</span>';
+    }
+
+    tr.innerHTML =
+      '<td>' + result.property + (result.optional ? ' <span class="info">(optional)</span>' : '') + '</td>' +
+      '<td>' + (result.ownedBy || 'N/A') + ' (depth ' + (result.protoDepth || 0) + ')</td>' +
+      '<td>' + (result.isAccessor ? 'accessor' : 'data') + '</td>' +
+      '<td class="' + (result.configurable === false ? 'pass' : 'fail') + '">' +
+        (result.configurable === false ? 'NON-configurable' : result.configurable === true ? 'CONFIGURABLE' : '?') + '</td>' +
+      '<td>' + writableInfo + '</td>' +
+      '<td class="' + verdictClass + '">' + (result.verdict === 'pass' ? 'SECURE' : 'VULNERABLE') +
+        (result.optional ? ' (optional)' : '') + '</td>' +
+      '<td>' + detailsHtml + '</td>';
+
+    tbody.appendChild(tr);
+
+    if (result.verdict !== 'pass' && !step.optional) {
+      chainAllPass = false;
+    }
+    if (!step.optional) chainHasOptionalOnly = false;
+  });
+
+  table.appendChild(tbody);
+  chainDiv.appendChild(table);
+
+  // Chain verdict
+  var verdict = document.createElement('p');
+  if (chainAllPass) {
+    verdict.className = 'pass';
+    verdict.textContent = 'CHAIN SECURE: All required properties are non-configurable. This chain can be used for verified clean-context creation.';
+    chainDiv.className = 'chain secure';
+  } else {
+    verdict.className = 'fail';
+    verdict.textContent = 'CHAIN VULNERABLE: One or more required properties are configurable. Attacker can intercept this chain.';
+    chainDiv.className = 'chain insecure';
+  }
+  chainDiv.appendChild(verdict);
+
+  output.appendChild(chainDiv);
+  chainSummaries.push({ name: chain.name, secure: chainAllPass });
+});
+
+// ============================================================
+// Shadow + Delete + Restore test
+// ============================================================
+
+var shadowDiv = document.createElement('div');
+shadowDiv.className = 'chain';
+shadowDiv.innerHTML = '<h2>Shadow + Delete + Restore Tests</h2>' +
+  '<p class="info">Tests whether the delete operator can remove attacker-created shadows ' +
+  'and restore original non-configurable accessors.</p>';
+
+var shadowTable = document.createElement('table');
+shadowTable.innerHTML = '<thead><tr><th>Property</th><th>Can Shadow (defineProperty)?</th>' +
+  '<th>Shadow Active?</th><th>Delete Result</th><th>Original Restored?</th></tr></thead>';
+var shadowTbody = document.createElement('tbody');
+
+// Test shadow+restore on key properties
+// We need to be careful to actually restore things!
+var shadowTests = [
+  // We'll test on a freshly-created iframe's contentWindow to avoid corrupting the main page
+];
+
+// Create a temporary iframe for safe testing
+var testIframe = document.createElement('iframe');
+testIframe.style.display = 'none';
+document.body.appendChild(testIframe);
+var testWin = testIframe.contentWindow;
+var testDoc = testIframe.contentDocument;
+
+if (testWin && testDoc) {
+  // Test shadow on the iframe's window.document
+  var shadowPairs = [
+    [testWin, 'document', 'iframeWindow'],
+    [testDoc, 'createElement', 'iframeDocument'],
+  ];
+
+  shadowPairs.forEach(function(pair) {
+    var obj = pair[0], prop = pair[1], name = pair[2];
+    var tr = document.createElement('tr');
+    var origValue;
+    try { origValue = obj[prop]; } catch(e) { origValue = '(error)'; }
+
+    var canShadow = false, shadowActive = false, deleteResult = false, restored = false;
+
+    // Try to shadow with Object.defineProperty
+    try {
+      Object.defineProperty(obj, prop, {
+        value: 'SHADOW_' + prop,
+        configurable: true,
+        writable: true
+      });
+      canShadow = true;
+      shadowActive = (obj[prop] === 'SHADOW_' + prop);
+    } catch(e) {
+      canShadow = false;
+    }
+
+    if (canShadow) {
+      // Try to delete the shadow
+      try {
+        deleteResult = delete obj[prop];
+        restored = (obj[prop] === origValue);
+      } catch(e) {
+        deleteResult = 'error: ' + e.message;
+      }
+    }
+
+    // Also try direct assignment shadow
+    var canAssignShadow = false;
+    try {
+      obj[prop] = 'ASSIGN_SHADOW';
+      canAssignShadow = (obj[prop] === 'ASSIGN_SHADOW');
+      if (canAssignShadow) {
+        delete obj[prop]; // clean up
+      }
+    } catch(e) {
+      canAssignShadow = false;
+    }
+
+    tr.innerHTML =
+      '<td>' + name + '.' + prop + '</td>' +
+      '<td class="' + (canShadow ? 'fail' : 'pass') + '">' +
+        (canShadow ? 'YES (vulnerable to shadow)' : 'NO (cannot shadow)') + '</td>' +
+      '<td>' + (canShadow ? (shadowActive ? 'Yes' : 'No') : 'N/A') + '</td>' +
+      '<td>' + deleteResult + '</td>' +
+      '<td class="' + (canShadow ? (restored ? 'pass' : 'fail') : 'pass') + '">' +
+        (canShadow ? (restored ? 'YES (delete restores original)' : 'NO (original lost!)') : 'N/A (shadow impossible)') +
+      '</td>';
+
+    shadowTbody.appendChild(tr);
+  });
+
+  // Also test: can the attacker redefine properties on prototypes?
+  var protoTests = [
+    [HTMLIFrameElement.prototype, 'contentWindow', 'HTMLIFrameElement.prototype'],
+    [Document.prototype, 'createElement', 'Document.prototype'],
+    [Node.prototype, 'appendChild', 'Node.prototype'],
+  ];
+
+  protoTests.forEach(function(test) {
+    var obj = test[0], prop = test[1], name = test[2];
+    var tr = document.createElement('tr');
+    var origValue;
+    var origDesc;
+    try {
+      origDesc = Object.getOwnPropertyDescriptor(obj, prop);
+      origValue = obj[prop];
+    } catch(e) {}
+
+    var canRedefine = false;
+    try {
+      Object.defineProperty(obj, prop, {
+        value: 'ATTACKER_REDEFINE',
+        configurable: true,
+        writable: true
+      });
+      canRedefine = (obj[prop] === 'ATTACKER_REDEFINE');
+      // RESTORE original!
+      if (origDesc) {
+        Object.defineProperty(obj, prop, origDesc);
+      }
+    } catch(e) {
+      canRedefine = false;
+    }
+
+    // Also test simple assignment
+    var canAssign = false;
+    var origVal2;
+    try {
+      origVal2 = obj[prop];
+      obj[prop] = 'ATTACKER_ASSIGN';
+      canAssign = (obj[prop] === 'ATTACKER_ASSIGN');
+      // restore
+      if (canAssign && origDesc) {
+        Object.defineProperty(obj, prop, origDesc);
+      }
+    } catch(e) {
+      canAssign = false;
+    }
+
+    tr.innerHTML =
+      '<td>' + name + '.' + prop + '</td>' +
+      '<td class="' + (canRedefine ? 'fail' : 'pass') + '">' +
+        (canRedefine ? 'YES (defineProperty works!)' : 'NO (defineProperty throws)') + '</td>' +
+      '<td>assignable: ' + (canAssign ? '<span class="fail">YES</span>' : '<span class="pass">NO</span>') + '</td>' +
+      '<td colspan="2">' +
+        (canRedefine ? 'VULNERABLE: attacker can redefine on prototype' :
+         'PROTECTED: cannot redefine on prototype') +
+      '</td>';
+
+    shadowTbody.appendChild(tr);
+  });
+}
+
+shadowTable.appendChild(shadowTbody);
+shadowDiv.appendChild(shadowTable);
+output.appendChild(shadowDiv);
+
+// Clean up test iframe
+document.body.removeChild(testIframe);
+
+// ============================================================
+// Test: about:blank iframe origin and storage
+// ============================================================
+
+var iframeDiv = document.createElement('div');
+iframeDiv.className = 'chain';
+iframeDiv.innerHTML = '<h2>Iframe Context Tests</h2>' +
+  '<p class="info">Tests whether an about:blank iframe inherits the parent origin ' +
+  'and has access to IndexedDB and crypto.subtle.</p>';
+
+var iframe2 = document.createElement('iframe');
+iframe2.style.display = 'none';
+document.body.appendChild(iframe2);
+
+var iframeResults = [];
+try {
+  var iWin = iframe2.contentWindow;
+  iframeResults.push('contentWindow accessible: ' + (!!iWin));
+  iframeResults.push('iframe origin: ' + (iWin.origin || iWin.location.origin || '(unknown)'));
+  iframeResults.push('parent origin: ' + window.location.origin);
+  iframeResults.push('origins match: ' + (iWin.location.origin === window.location.origin));
+  iframeResults.push('has indexedDB: ' + (typeof iWin.indexedDB));
+  iframeResults.push('has crypto.subtle: ' + (typeof (iWin.crypto && iWin.crypto.subtle)));
+  iframeResults.push('has fetch: ' + (typeof iWin.fetch));
+  iframeResults.push('has eval: ' + (typeof iWin.eval));
+
+  // Test: is the iframe's Function.prototype.toString the same as the parent's?
+  var iFunc = iWin.Function;
+  iframeResults.push('iframe has Function: ' + (typeof iFunc));
+
+  // Test: are the iframe's prototypes different objects from the parent's?
+  iframeResults.push('iframe Object !== parent Object: ' + (iWin.Object !== window.Object));
+  iframeResults.push('iframe Function !== parent Function: ' + (iWin.Function !== window.Function));
+  iframeResults.push('iframe Array !== parent Array: ' + (iWin.Array !== window.Array));
+
+  // This is the critical test: if iframe globals are DIFFERENT objects, they have
+  // their own prototype chains, unaffected by parent's modifications
+  iframeResults.push('---');
+  iframeResults.push('CRITICAL: If iframe builtins are different objects from parent,');
+  iframeResults.push('then modifications to parent prototypes do NOT affect iframe context.');
+
+} catch(e) {
+  iframeResults.push('Error: ' + e.message);
+}
+
+var iframeResultsHtml = iframeResults.map(function(r) {
+  return '<div>' + r + '</div>';
+}).join('');
+iframeDiv.innerHTML += iframeResultsHtml;
+output.appendChild(iframeDiv);
+
+document.body.removeChild(iframe2);
+
+// ============================================================
+// Raw descriptor dump (for detailed analysis)
+// ============================================================
+
+var rawDiv = document.createElement('div');
+rawDiv.className = 'chain';
+rawDiv.innerHTML = '<h2>Raw Property Descriptor Dump</h2>' +
+  '<p class="info">Complete descriptor data for copy-paste analysis.</p>';
+
+var rawData = {__proto__: null};
+var dumpTargets = [
+  ['window', 'document'],
+  ['window', 'open'],
+  ['window', 'eval'],
+  ['window', 'Function'],
+  ['window', 'Worker'],
+  ['window', 'Blob'],
+  ['window', 'crypto'],
+  ['window', 'indexedDB'],
+  ['window', 'fetch'],
+  ['Document.prototype', 'createElement'],
+  ['Document.prototype', 'body'],
+  ['Document.prototype', 'implementation'],
+  ['Document.prototype', 'getElementById'],
+  ['HTMLIFrameElement.prototype', 'contentWindow'],
+  ['HTMLIFrameElement.prototype', 'contentDocument'],
+  ['HTMLIFrameElement.prototype', 'srcdoc'],
+  ['HTMLIFrameElement.prototype', 'src'],
+  ['Element.prototype', 'innerHTML'],
+  ['Node.prototype', 'appendChild'],
+  ['Node.prototype', 'insertBefore'],
+  ['DOMImplementation.prototype', 'createHTMLDocument'],
+  ['Function.prototype', 'toString'],
+  ['Function.prototype', 'call'],
+  ['Function.prototype', 'apply'],
+  ['Function.prototype', 'bind'],
+  ['Object', 'getOwnPropertyDescriptor'],
+  ['Object', 'defineProperty'],
+  ['Object', 'getPrototypeOf'],
+  ['Object.prototype', 'hasOwnProperty'],
+  ['Object.prototype', '__proto__'],
+  ['URL', 'createObjectURL'],
+  ['SubtleCrypto.prototype', 'digest'],
+  ['IDBFactory.prototype', 'open'],
+  ['Window.prototype', 'document'],
+  ['Window.prototype', 'fetch'],
+  ['Window.prototype', 'open'],
+];
+
+dumpTargets.forEach(function(target) {
+  var objName = target[0], propName = target[1];
+  var obj;
+  try {
+    obj = eval(objName);
+  } catch(e) {
+    rawData[objName + '.' + propName] = { error: 'Cannot access ' + objName + ': ' + e.message };
+    return;
+  }
+  try {
+    var desc = Object.getOwnPropertyDescriptor(obj, propName);
+    if (desc) {
+      rawData[objName + '.' + propName] = describeDescriptor(desc);
+    } else {
+      rawData[objName + '.' + propName] = { status: 'no own property (check prototype chain)' };
+    }
+  } catch(e) {
+    rawData[objName + '.' + propName] = { error: e.message };
+  }
+});
+
+var pre = document.createElement('pre');
+pre.className = 'json';
+pre.textContent = JSON.stringify(rawData, null, 2);
+rawDiv.appendChild(pre);
+output.appendChild(rawDiv);
+
+// ============================================================
+// Summary
+// ============================================================
+
+var summaryHtml = '<div class="summary"><h2>Summary</h2>';
+summaryHtml += '<table><thead><tr><th>Chain</th><th>Status</th></tr></thead><tbody>';
+chainSummaries.forEach(function(cs) {
+  summaryHtml += '<tr><td>' + cs.name + '</td>' +
+    '<td class="' + (cs.secure ? 'pass' : 'fail') + '">' +
+    (cs.secure ? 'ALL LINKS SECURE' : 'HAS VULNERABLE LINKS') + '</td></tr>';
+});
+summaryHtml += '</tbody></table>';
+
+var secureChains = chainSummaries.filter(function(cs) { return cs.secure; });
+if (secureChains.length > 0) {
+  summaryHtml += '<p class="pass">RESULT: ' + secureChains.length + ' chain(s) appear fully secure. ' +
+    'Verified clean-context creation may be possible on this browser.</p>';
+} else {
+  summaryHtml += '<p class="fail">RESULT: No complete chain is fully secure on this browser. ' +
+    'All chains have at least one configurable/writable property that an attacker could replace.</p>';
+}
+
+summaryHtml += '<p class="info">Note: These results are for this specific browser version. ' +
+  'Test on all target browsers (especially iOS Safari) for a complete picture.</p>';
+summaryHtml += '</div>';
+summaryEl.innerHTML = summaryHtml;
+
+</script>
+</body>
+</html>
