@@ -1,6 +1,6 @@
 # markproof
 
-**Trust-anchored web application loader.** Secure your web app against server compromise, domain seizure, and MITM attacks — even by state-level adversaries — after initial installation.
+**Trust-anchored web application loader.** Protect your static web app against server compromise, domain seizure, and MITM attacks — even by state-level adversaries — after initial installation.
 
 > **[Live Demo & Installer](https://markproof.ameriwether.com)** — try the Dino Runner demo app with bookmarklet-based trust anchoring
 
@@ -10,7 +10,9 @@
 
 Standard web apps trust the server every time they load. If the server is compromised, every user gets malicious code. Service workers don't help — the browser's update lifecycle will eventually install the attacker's replacement.
 
-**markproof moves the root of trust from the server to a client-side bookmarklet.** After initial installation, all code is cryptographically verified against keys embedded in the user's bookmark before execution. An attacker who gains control of every server involved — the origin, the CDN, DNS, even a certificate authority — cannot cause the user to run unverified code.
+**markproof moves the root of trust from the server to a client-side bookmarklet.** After initial installation, all code is cryptographically verified against keys embedded in the user's bookmark before execution. An attacker who gains control of every server involved — the origin, the CDN, DNS, even a certificate authority — cannot cause the user to run unverified code, though they can cause a denial of service by serving content that fails verification.
+
+> **Important:** This protection assumes the Ed25519 signing key is held offline or otherwise compartmentalized — it must not be compromised alongside the server. This makes markproof suitable for **static, offline-signed content** where the key is managed separately from the deployment infrastructure, but **not for dynamic server-generated content** where the signing key would need to live on the server itself.
 
 ### How It Works
 
@@ -21,10 +23,11 @@ Standard web apps trust the server every time they load. If the server is compro
 
 ### Key Properties
 
-- **Survives server compromise**: The server is explicitly untrusted. All content is signature-verified against keys in the bootstrap.
-- **Survives domain seizure**: Even if a government seizes the domain, the bookmarklet's keys reject any unsigned replacement code.
+- **Protects against server compromise**: The server is explicitly untrusted. All content is signature-verified against keys in the bootstrap. A compromised server can cause denial of service (by serving content that fails verification) but cannot cause the user to execute unverified code. This assumes the signing key remains uncompromised (held offline/compartmentalized).
+- **Protects against domain seizure**: Even if a government seizes the domain, the bookmarklet's keys reject any unsigned replacement code. The application becomes unavailable but cannot be silently replaced.
 - **Guaranteed clean context**: The data-URL page provides a browser-guaranteed fresh JavaScript environment — no attacker code can influence it.
 - **CDN-friendly**: Only the manifest is signed. Individual resources are hash-verified, so they can be hosted on any CORS-enabled server (unpkg, jsDelivr, etc.) without trusting it.
+- **Static content only**: Because the signing key must remain offline/compartmentalized, markproof is designed for static, pre-built content signed at build time — not for dynamic server-generated content where the key would need to be accessible to the server.
 - **Minimal dependencies**: Zero runtime dependencies. Only build dependency is `@types/bun`.
 
 See [DESIGN.md](DESIGN.md) for the full threat model, architecture, and security analysis.
@@ -167,6 +170,19 @@ src/
 |------|----------|----------|
 | **Locked** | Pinned to exact version; even signed updates are rejected | Maximum security — code changes require new bookmarklet |
 | **Auto-update** | Accepts author-signed updates | Convenience — user trusts the author's signing key |
+
+---
+
+## Trust Anchor & Bookmarklet Installation
+
+Every time a user installs (or re-installs) a bookmarklet, they are **resetting their trust anchor** to whatever entity currently controls the content at that URL. If the server has been compromised at the time of installation, the user will receive a bookmarklet anchored to the attacker's keys.
+
+This is analogous to SSH's "trust on first use" (TOFU) model: the initial connection must be authentic, but all subsequent connections are verified against that anchor.
+
+**Implications:**
+- The bookmarklet should clearly communicate that a **signature verification failure may indicate server compromise**, even if the server appears to be functioning normally and still shows the "install bookmarklet" page. The visual appearance of the page is not trustworthy — only the cryptographic verification is.
+- Users should treat bookmarklet installation with the same gravity as installing software: verify the source through an out-of-band channel when possible.
+- A compromised server that still displays the installer page is indistinguishable from a legitimate one — the user must understand that installing a new bookmarklet from a potentially compromised source resets all prior trust guarantees.
 
 ---
 
