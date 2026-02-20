@@ -7,69 +7,58 @@ export interface BookmarkletOptions {
 }
 
 /**
- * Generate a bookmarklet javascript: URL from the template and per-installation values.
+ * Build the minimal HTML content for a bookmarklet data URL.
+ *
+ * The HTML is a single <script> tag that loads the bootstrap via SRI,
+ * with configuration passed as data attributes.
+ */
+function buildBookmarkletHtml(options: {
+  bootstrapUrl: string;
+  bootstrapHashBase64: string;
+  updateMode: string;
+  manifestHash: string;
+}): string {
+  let html = '<script src=' + options.bootstrapUrl
+    + ' integrity=sha256-' + options.bootstrapHashBase64
+    + ' crossorigin=anonymous';
+
+  if (options.updateMode === 'locked') {
+    html += ' data-mode=locked';
+  }
+  if (options.manifestHash) {
+    html += ' data-hash=' + options.manifestHash;
+  }
+
+  html += " onerror=document.body.innerHTML='Secure\\x20app\\x20load\\x20failed.'/>";
+
+  return html;
+}
+
+/**
+ * Generate a bookmarklet data: URL from per-installation values.
+ *
+ * The bookmarklet is a data:text/html URL containing a single <script> tag
+ * that loads the bootstrap via SRI. Configuration is passed as data attributes
+ * on the script element.
  *
  * @param options Per-installation configuration
- * @returns Object with the javascript URL
+ * @returns Object with the data URL
  */
 export function generateBookmarklet(options: BookmarkletOptions): {
   url: string;
 } {
-  const runtimeDir = new URL('./runtime/', import.meta.url).pathname;
-
-  const bookmarkletTemplate = require('fs').readFileSync(
-    runtimeDir + 'bookmarklet.js', 'utf8'
-  );
-
   const updateMode = options.updateMode || 'auto';
   const manifestHash = options.manifestHash || '';
 
-  // Replace placeholders with per-installation values
-  let bookmarklet = bookmarkletTemplate;
-  bookmarklet = bookmarklet.split("'__ORIGIN_URL__'").join(JSON.stringify(options.originUrl));
-  bookmarklet = bookmarklet.split("'__BOOTSTRAP_URL__'").join(JSON.stringify(options.bootstrapUrl));
-  bookmarklet = bookmarklet.split("'__BOOTSTRAP_HASH_BASE64__'").join(JSON.stringify(options.bootstrapHashBase64));
-  bookmarklet = bookmarklet.split("'__UPDATE_MODE__'").join(JSON.stringify(updateMode));
-  bookmarklet = bookmarklet.split("'__MANIFEST_HASH__'").join(JSON.stringify(manifestHash));
+  const html = buildBookmarkletHtml({
+    bootstrapUrl: options.bootstrapUrl,
+    bootstrapHashBase64: options.bootstrapHashBase64,
+    updateMode,
+    manifestHash,
+  });
 
-  // Minify for bookmarklet URL
-  const minified = minifyBookmarklet(bookmarklet);
-
+  const base64 = Buffer.from(html).toString('base64');
   return {
-    url: 'javascript:' + minified,
-  };
-}
-
-/**
- * Basic minification for bookmarklet source.
- * Strips comments and collapses whitespace.
- */
-function minifyBookmarklet(source: string): string {
-  return source
-    // Remove single-line comments (but not URLs containing //)
-    .replace(/(?<![:'"])\/\/(?!.*['"])[^\n]*/g, '')
-    // Remove multi-line comments
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    // Collapse whitespace
-    .replace(/\s+/g, ' ')
-    // Remove space around operators/punctuation
-    .replace(/\s*([{}();\[\],=<>!&|+\-*/%^~?:])\s*/g, '$1')
-    // Clean up double semicolons
-    .replace(/;;+/g, ';')
-    .trim();
-}
-
-/**
- * Get the raw template source for client-side bookmarklet generation.
- * Used by the installer page generator to embed the template at build time.
- */
-export function getTemplateSources(): {
-  bookmarkletTemplate: string;
-} {
-  const runtimeDir = new URL('./runtime/', import.meta.url).pathname;
-  const fs = require('fs');
-
-  return {
-    bookmarkletTemplate: fs.readFileSync(runtimeDir + 'bookmarklet.js', 'utf8'),
+    url: 'data:text/html;base64,' + base64,
   };
 }
