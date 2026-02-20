@@ -1,4 +1,4 @@
-// Bootstrap script for the offline web app package manager.
+// Bootstrap script for the markproof trust-anchored web app loader.
 //
 // This script is fetched by the bookmarklet, hash-verified using pure-JS SHA-256,
 // and then executed inside a verified clean iframe context via cleanWin.eval().

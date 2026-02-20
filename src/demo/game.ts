@@ -1,6 +1,6 @@
 /**
  * Dino Runner — a Chrome Dino-style endless runner game.
- * This is the demo app for the offline web app package manager.
+ * This is the demo app for the markproof trust-anchored web app loader.
  */
 
 const CANVAS_W = 800;
@@ -308,7 +308,7 @@ function drawStartScreen() {
   ctx.fillText('Press SPACE or tap to start', CANVAS_W / 2, CANVAS_H / 2 - 20);
   ctx.font = '12px monospace';
   ctx.fillStyle = '#999';
-  ctx.fillText('Dino Runner — Offline App Demo', CANVAS_W / 2, CANVAS_H / 2 + 10);
+  ctx.fillText('Dino Runner — markproof Demo', CANVAS_W / 2, CANVAS_H / 2 + 10);
 }
 
 function drawGameOver() {

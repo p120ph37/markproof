@@ -247,26 +247,6 @@
       color: #b0b0ff;
     }
 
-    .hmac-key-display {
-      margin-top: 12px;
-      padding: 12px;
-      background: #2e1a1a;
-      border: 1px solid #8a4a4a;
-      border-radius: 6px;
-      font-size: 11px;
-      color: #ffb0b0;
-      word-break: break-all;
-    }
-
-    .hmac-key-display .label {
-      font-weight: bold;
-      color: #ff8080;
-      display: block;
-      margin-bottom: 4px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-
     /* === Footer === */
     footer {
       margin-top: auto;
@@ -301,7 +281,7 @@
   <!-- Actual installer content -->
   <div class="content">
     <h1>__APP_NAME__</h1>
-    <p class="subtitle">Secure offline app installer — v__APP_VERSION__</p>
+    <p class="subtitle">Secure app installer — v__APP_VERSION__</p>
 
     <div class="installer-card">
       <h2>Generate Your Bookmarklet</h2>
@@ -337,12 +317,8 @@
             <li><strong>Drag</strong> the green link above to your browser's bookmark bar</li>
             <li><strong>Click</strong> the bookmark from any page to launch the app</li>
             <li><strong>Verify</strong> your visual token appears briefly in the top-right corner</li>
-            <li>The app loads from cache after first install — <strong>works offline!</strong></li>
+            <li>The app loads from verified cache after first install</li>
           </ol>
-        </div>
-        <div class="hmac-key-display" id="hmac-display">
-          <span class="label">Backup your HMAC key (write this down):</span>
-          <span id="hmac-value"></span>
         </div>
       </div>
     </div>

@@ -414,9 +414,9 @@ iOS does **not** support `javascript:` URLs as home screen icons. Home screen "A
 markproof provides a Bun build plugin that wraps `Bun.build()` and adds manifest generation, signing, and installer generation:
 
 ```typescript
-import { buildOfflineApp } from 'markproof/plugin';
+import { buildApp } from 'markproof/plugin';
 
-await buildOfflineApp({
+await buildApp({
   entrypoints: ['./src/app.ts'],
   staticFiles: ['./src/index.html', './src/style.css'],
   outdir: './dist',

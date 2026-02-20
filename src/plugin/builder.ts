@@ -43,7 +43,7 @@ export interface BuildResult {
 }
 
 /**
- * Build an offline web app with manifest generation, signing, and installer.
+ * Build a trust-anchored web app with manifest generation, signing, and installer.
  *
  * This wraps Bun.build() and adds:
  * 1. SHA-256 hashing of all output files
@@ -52,13 +52,13 @@ export interface BuildResult {
  * 4. Bootstrap.js deployment
  * 5. Installer page generation with embedded bookmarklet generator
  */
-export async function buildOfflineApp(options: BuildOptions): Promise<BuildResult> {
+export async function buildApp(options: BuildOptions): Promise<BuildResult> {
   const {
     entrypoints,
     staticFiles = [],
     outdir,
     minify = true,
-    appName = 'Offline App',
+    appName = 'App',
     version = '1.0.0',
     originUrl,
     privateKey,
@@ -201,7 +201,7 @@ async function buildInstaller(
       '__BOOTSTRAP_HASH__': JSON.stringify(bootstrapHash),
       '__ORIGIN_URL__': JSON.stringify(options.originUrl),
       '__BOOTSTRAP_URL__': JSON.stringify(bootstrapUrl),
-      '__APP_NAME__': JSON.stringify(options.appName || 'Offline App'),
+      '__APP_NAME__': JSON.stringify(options.appName || 'App'),
       '__APP_VERSION__': JSON.stringify(options.version || '1.0.0'),
     },
   });
@@ -218,7 +218,7 @@ async function buildInstaller(
   let installerHtml = fs.readFileSync(template, 'utf8');
   // Replace any template variables in the HTML
   installerHtml = installerHtml
-    .replace(/__APP_NAME__/g, options.appName || 'Offline App')
+    .replace(/__APP_NAME__/g, options.appName || 'App')
     .replace(/__APP_VERSION__/g, options.version || '1.0.0');
 
   fs.writeFileSync(path.join(outdir, 'index.html'), installerHtml);
