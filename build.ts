@@ -12,7 +12,7 @@
  *   APP_VERSION          - Override version string (default: from package.json)
  */
 
-import { buildOfflineApp } from './src/plugin';
+import { buildApp } from './src/plugin';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -20,18 +20,18 @@ import { join } from 'path';
 const pkg = JSON.parse(readFileSync(join(import.meta.dir, 'package.json'), 'utf8'));
 
 // Configuration
-const originUrl = process.env.ORIGIN_URL || 'https://p120ph37.github.io/html5-webapp';
+const originUrl = process.env.ORIGIN_URL || 'https://markproof.ameriwether.com';
 const privateKey = process.env.SIGNING_PRIVATE_KEY || undefined;
 const publicKey = process.env.PUBLIC_KEY || undefined;
 const version = process.env.APP_VERSION || pkg.version;
 
 console.log('');
 console.log('╔══════════════════════════════════════╗');
-console.log('║   Dino Runner — Offline App Build    ║');
+console.log('║   Dino Runner — markproof Build      ║');
 console.log('╚══════════════════════════════════════╝');
 console.log('');
 
-const result = await buildOfflineApp({
+const result = await buildApp({
   entrypoints: [join(import.meta.dir, 'src/demo/game.ts')],
   staticFiles: [
     join(import.meta.dir, 'src/demo/style.css'),

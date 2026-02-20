@@ -142,7 +142,6 @@ function initGenerator() {
   const updateModeSelect = document.getElementById('update-mode') as HTMLSelectElement;
   const resultDiv = document.getElementById('result') as HTMLElement;
   const bookmarkletLink = document.getElementById('bookmarklet-link') as HTMLAnchorElement;
-  const hmacValue = document.getElementById('hmac-value') as HTMLElement;
 
   if (!generateBtn) return;
 
@@ -168,9 +167,6 @@ function initGenerator() {
     // Update the bookmarklet link
     bookmarkletLink.href = bookmarkletUrl;
     bookmarkletLink.textContent = `📎 ${__APP_NAME__} Launcher — Drag to bookmark bar`;
-
-    // Show HMAC key for backup
-    hmacValue.textContent = hmacKey;
 
     // Show result section
     resultDiv.classList.add('visible');

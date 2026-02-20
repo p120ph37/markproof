@@ -2,7 +2,7 @@
 
 **Trust-anchored web application loader.** Secure your web app against server compromise, domain seizure, and MITM attacks — even by state-level adversaries — after initial installation.
 
-> **[Live Demo & Installer](https://p120ph37.github.io/html5-webapp)** — try the Dino Runner demo app with bookmarklet-based trust anchoring
+> **[Live Demo & Installer](https://markproof.ameriwether.com)** — try the Dino Runner demo app with bookmarklet-based trust anchoring
 
 ---
 
@@ -49,11 +49,11 @@ bun add markproof
 
 ```typescript
 // build.ts
-import { buildOfflineApp } from 'markproof/plugin';
+import { buildApp } from 'markproof/plugin';
 // Or from local path:
-// import { buildOfflineApp } from './path-to-markproof/src/plugin';
+// import { buildApp } from './path-to-markproof/src/plugin';
 
-await buildOfflineApp({
+await buildApp({
   // Standard Bun.build options
   entrypoints: ['./src/app.ts'],
   staticFiles: [
@@ -135,7 +135,7 @@ const { url, hmacKey } = generateBookmarklet({
 });
 
 console.log(url);     // javascript:void(function(){...})()
-console.log(hmacKey); // 64-char hex string — back this up!
+console.log(hmacKey); // 64-char hex string
 ```
 
 ---
@@ -146,7 +146,7 @@ console.log(hmacKey); // 64-char hex string — back this up!
 src/
 ├── plugin/                     # Reusable Bun plugin
 │   ├── index.ts                # Public API exports
-│   ├── builder.ts              # buildOfflineApp() — wraps Bun.build
+│   ├── builder.ts              # buildApp() — wraps Bun.build
 │   ├── manifest.ts             # Manifest generation + Ed25519 signing
 │   ├── bookmarklet.ts          # Bookmarklet assembly + minification
 │   ├── keygen.ts               # Ed25519 keypair generation CLI
