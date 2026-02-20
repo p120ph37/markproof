@@ -6,9 +6,13 @@
 // compromised page JavaScript.
 //
 // Because it runs in a clean data-URL context, it can trust:
-//   - crypto.subtle (native, unmodified WebCrypto API)
 //   - fetch (native, unmodified Fetch API)
 //   - All built-in objects (Object, Array, Promise, etc.)
+//
+// Note: crypto.subtle may NOT be available in data: URL contexts (they are
+// not "secure contexts" in all browsers). The bootstrap includes a pure-JS
+// SHA-256 fallback. Ed25519 verification requires crypto.subtle and will
+// fail with a clear error if unavailable.
 //
 // Configuration is read from data attributes on the <script> element:
 //   src          - URL to this bootstrap script (used to derive content base URL)
@@ -38,6 +42,15 @@
   var BOOTSTRAP_URL = script.src;
   var UPDATE_MODE = script.getAttribute('data-mode') || 'auto';
   var MANIFEST_HASH = script.getAttribute('data-hash') || '';
+
+  // ================================================================
+  // Ensure document.body exists (data: URL pages may only have <head>)
+  // ================================================================
+  function ensureBody() {
+    if (!document.body) {
+      document.documentElement.appendChild(document.createElement('body'));
+    }
+  }
 
   // ================================================================
   // Utility: hex string to Uint8Array
@@ -71,19 +84,134 @@
   }
 
   // ================================================================
-  // Crypto: SHA-256 hash (using clean context's crypto.subtle)
+  // Pure-JS SHA-256 implementation (fallback for non-secure contexts)
+  //
+  // data: URL pages have opaque origins and are NOT "secure contexts"
+  // in Chrome, so crypto.subtle is unavailable. This pure-JS SHA-256
+  // provides identical results and is used as a fallback.
   // ================================================================
-  function sha256(data) {
-    var buffer = (typeof data === 'string') ? stringToBuffer(data) : data;
-    return crypto.subtle.digest('SHA-256', buffer).then(function(hash) {
-      return bytesToHex(new Uint8Array(hash));
-    });
+  var SHA256_K = new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+    0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+    0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+    0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+    0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ]);
+
+  function sha256js(data) {
+    var bytes;
+    if (typeof data === 'string') {
+      bytes = stringToBuffer(data);
+    } else if (data instanceof Uint8Array) {
+      bytes = data;
+    } else {
+      bytes = new Uint8Array(data);
+    }
+
+    // Pre-processing: pad message
+    var bitLen = bytes.length * 8;
+    // Message + 1 byte (0x80) + padding + 8 bytes (length)
+    var padLen = 64 - ((bytes.length + 9) % 64);
+    if (padLen === 64) padLen = 0;
+    var padded = new Uint8Array(bytes.length + 1 + padLen + 8);
+    padded.set(bytes);
+    padded[bytes.length] = 0x80;
+    // Write bit length as big-endian 64-bit integer (only lower 32 bits for messages < 512MB)
+    var view = new DataView(padded.buffer);
+    view.setUint32(padded.length - 4, bitLen, false);
+
+    // Initialize hash values
+    var h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
+    var h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+
+    var w = new Uint32Array(64);
+
+    // Process each 512-bit (64-byte) block
+    for (var offset = 0; offset < padded.length; offset += 64) {
+      // Copy block into first 16 words
+      for (var i = 0; i < 16; i++) {
+        w[i] = view.getUint32(offset + i * 4, false);
+      }
+
+      // Extend to 64 words
+      for (var i = 16; i < 64; i++) {
+        var s0 = (((w[i-15] >>> 7) | (w[i-15] << 25)) ^ ((w[i-15] >>> 18) | (w[i-15] << 14)) ^ (w[i-15] >>> 3)) >>> 0;
+        var s1 = (((w[i-2] >>> 17) | (w[i-2] << 15)) ^ ((w[i-2] >>> 19) | (w[i-2] << 13)) ^ (w[i-2] >>> 10)) >>> 0;
+        w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+      }
+
+      // Initialize working variables
+      var a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+
+      // Compression function
+      for (var i = 0; i < 64; i++) {
+        var S1 = (((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7))) >>> 0;
+        var ch = ((e & f) ^ (~e & g)) >>> 0;
+        var temp1 = (h + S1 + ch + SHA256_K[i] + w[i]) >>> 0;
+        var S0 = (((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10))) >>> 0;
+        var maj = ((a & b) ^ (a & c) ^ (b & c)) >>> 0;
+        var temp2 = (S0 + maj) >>> 0;
+
+        h = g; g = f; f = e; e = (d + temp1) >>> 0;
+        d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
+      }
+
+      h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0;
+      h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0;
+      h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0;
+      h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
+    }
+
+    // Produce the final hash (big-endian)
+    var result = new Uint8Array(32);
+    var rv = new DataView(result.buffer);
+    rv.setUint32(0, h0, false); rv.setUint32(4, h1, false);
+    rv.setUint32(8, h2, false); rv.setUint32(12, h3, false);
+    rv.setUint32(16, h4, false); rv.setUint32(20, h5, false);
+    rv.setUint32(24, h6, false); rv.setUint32(28, h7, false);
+
+    return bytesToHex(result);
   }
 
   // ================================================================
-  // Crypto: Ed25519 signature verification
+  // Crypto: SHA-256 hash (WebCrypto with pure-JS fallback)
+  // ================================================================
+  function sha256(data) {
+    var buffer = (typeof data === 'string') ? stringToBuffer(data) : data;
+
+    // Use crypto.subtle if available (secure contexts)
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      return crypto.subtle.digest('SHA-256', buffer).then(function(hash) {
+        return bytesToHex(new Uint8Array(hash));
+      });
+    }
+
+    // Fallback: pure-JS SHA-256 (for data: URL non-secure contexts)
+    return Promise.resolve(sha256js(buffer));
+  }
+
+  // ================================================================
+  // Crypto: Ed25519 signature verification (requires crypto.subtle)
   // ================================================================
   function importEd25519PublicKey(base64Key) {
+    if (!crypto.subtle) {
+      return Promise.reject(new Error(
+        'Ed25519 verification requires a secure context (crypto.subtle). ' +
+        'This data: URL page is not a secure context.'
+      ));
+    }
+
     var raw = atob(base64Key);
     var bytes = new Uint8Array(raw.length);
     for (var i = 0; i < raw.length; i++) {
@@ -181,6 +309,7 @@
   // ================================================================
   function showStatus(message) {
     try {
+      ensureBody();
       var existing = document.getElementById('__bootstrap_status');
       if (!existing) {
         existing = document.createElement('div');
@@ -211,7 +340,9 @@
   // Error: show error and abort
   // ================================================================
   function showError(message) {
+    console.error('markproof bootstrap: ' + message);
     try {
+      ensureBody();
       hideStatus();
       var el = document.createElement('div');
       el.setAttribute('style',
@@ -301,6 +432,7 @@
   // Main: orchestrate the bootstrap process
   // ================================================================
   function main() {
+    ensureBody();
     showStatus('Initializing...');
 
     // Derive the base content URL from the bootstrap URL
