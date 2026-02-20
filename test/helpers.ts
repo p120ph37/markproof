@@ -1,17 +1,16 @@
 /**
  * Shared test helpers: build the project with a test-local origin URL,
- * launch browser via puppeteer-core, etc.
+ * launch browser via playwright-core, etc.
  */
 
 import { join } from 'path';
 import { buildApp } from '../src/plugin';
 import { generateKeypair } from '../src/plugin/manifest';
 import { startServer, type TestServer } from './server';
-import puppeteer, { type Browser, type Page } from 'puppeteer-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 
 export const PROJECT_ROOT = join(import.meta.dir, '..');
 export const TEST_DIST = join(PROJECT_ROOT, 'dist-test');
-export const CHROMIUM_PATH = '/root/.cache/ms-playwright/chromium-1194/chrome-linux/chrome';
 
 /** Cached keypair so we only generate once per test run. */
 let cachedKeypair: { privateKey: string; publicKey: string } | null = null;
@@ -88,22 +87,52 @@ export async function buildAndServe(options?: BuildForTestOptions): Promise<{
 }
 
 /**
- * Launch a headless Chromium browser via puppeteer-core.
+ * Find a usable Chromium executable.
+ * Prefers: CHROMIUM_PATH env var > Playwright-managed browser > common system paths.
+ */
+function findChromium(): string | undefined {
+  const { existsSync } = require('fs');
+
+  // 1. Explicit env override
+  if (process.env.CHROMIUM_PATH && existsSync(process.env.CHROMIUM_PATH)) {
+    return process.env.CHROMIUM_PATH;
+  }
+
+  // 2. Let Playwright find its own managed browser (works after `bunx playwright-core install chromium`)
+  try {
+    const path = chromium.executablePath();
+    if (path && existsSync(path)) return path;
+  } catch {}
+
+  // 3. Common system / CI paths
+  const candidates = [
+    '/root/.cache/ms-playwright/chromium-1194/chrome-linux/chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+
+  return undefined;
+}
+
+/**
+ * Launch a headless Chromium browser via playwright-core.
+ *
+ * Playwright manages its own temporary user-data-dir, so --disable-web-security
+ * works without an explicit --user-data-dir flag (unlike raw Puppeteer).
  */
 export async function launchBrowser(): Promise<Browser> {
-  const { mkdtempSync } = await import('fs');
-  const { tmpdir } = await import('os');
-  const userDataDir = mkdtempSync(join(tmpdir(), 'markproof-test-'));
-
-  return puppeteer.launch({
-    executablePath: CHROMIUM_PATH,
+  return chromium.launch({
+    executablePath: findChromium(),
     headless: true,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      // --disable-web-security requires --user-data-dir to take effect
-      `--user-data-dir=${userDataDir}`,
       // Disable web security: data: URL pages (null origin) need to fetch from
       // localhost. Chrome's Private Network Access policy blocks this because
       // data: URLs are non-secure contexts accessing loopback addresses.

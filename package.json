@@ -14,6 +14,6 @@
   },
   "devDependencies": {
     "@types/bun": "^1.0.0",
-    "puppeteer-core": "^24.37.5"
+    "playwright-core": "^1.58.2"
   }
 }

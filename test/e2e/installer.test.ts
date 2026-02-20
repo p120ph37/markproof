@@ -7,7 +7,7 @@ import {
   TEST_DIST,
 } from '../helpers';
 import type { TestServer } from '../server';
-import type { Browser, Page } from 'puppeteer-core';
+import type { Browser, Page } from 'playwright-core';
 
 let server: TestServer;
 let browser: Browser;
@@ -95,7 +95,7 @@ describe('installer page', () => {
       await page.goto(server.url, { waitUntil: 'domcontentloaded' });
 
       // Select locked mode
-      await page.select('#update-mode', 'locked');
+      await page.selectOption('#update-mode', 'locked');
 
       // Click generate
       await page.click('#generate-btn');
