@@ -1,4 +1,4 @@
-# anchor.js
+# markproof
 
 **Trust-anchored web application loader.** Secure your web app against server compromise, domain seizure, and MITM attacks — even by state-level adversaries — after initial installation.
 
@@ -10,7 +10,7 @@
 
 Standard web apps trust the server every time they load. If the server is compromised, every user gets malicious code. Service workers don't help — the browser's update lifecycle will eventually install the attacker's replacement.
 
-**anchor.js moves the root of trust from the server to a client-side bookmarklet.** After initial installation, all code is cryptographically verified against keys embedded in the user's bookmark before execution. An attacker who gains control of every server involved — the origin, the CDN, DNS, even a certificate authority — cannot cause the user to run unverified code.
+**markproof moves the root of trust from the server to a client-side bookmarklet.** After initial installation, all code is cryptographically verified against keys embedded in the user's bookmark before execution. An attacker who gains control of every server involved — the origin, the CDN, DNS, even a certificate authority — cannot cause the user to run unverified code.
 
 ### How It Works
 
@@ -34,13 +34,13 @@ See [DESIGN.md](DESIGN.md) for the full threat model, architecture, and security
 
 ## Using the Plugin
 
-anchor.js provides a Bun build plugin that adds manifest generation, Ed25519 signing, and installer page generation to any Bun project.
+markproof provides a Bun build plugin that adds manifest generation, Ed25519 signing, and installer page generation to any Bun project.
 
 ### 1. Install
 
 ```bash
 # Add to your project (when published to npm)
-bun add anchorjs
+bun add markproof
 
 # Or reference directly from a local clone
 ```
@@ -49,9 +49,9 @@ bun add anchorjs
 
 ```typescript
 // build.ts
-import { buildOfflineApp } from 'anchorjs/plugin';
+import { buildOfflineApp } from 'markproof/plugin';
 // Or from local path:
-// import { buildOfflineApp } from './path-to-anchorjs/src/plugin';
+// import { buildOfflineApp } from './path-to-markproof/src/plugin';
 
 await buildOfflineApp({
   // Standard Bun.build options
@@ -63,7 +63,7 @@ await buildOfflineApp({
   outdir: './dist',
   minify: true,
 
-  // anchor.js options
+  // markproof options
   appName: 'My App',
   version: '1.0.0',
   originUrl: 'https://yourname.github.io/yourapp',
@@ -124,7 +124,7 @@ env:
 ### 6. Programmatic Bookmarklet Generation
 
 ```typescript
-import { generateBookmarklet } from 'anchorjs/plugin';
+import { generateBookmarklet } from 'markproof/plugin';
 
 const { url, hmacKey } = generateBookmarklet({
   originUrl: 'https://yourname.github.io/yourapp',
