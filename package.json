@@ -7,9 +7,13 @@
     "build": "bun run build.ts",
     "keygen": "bun run src/plugin/keygen.ts",
     "dev": "bun run --watch build.ts",
-    "preview": "bunx serve dist"
+    "preview": "bunx serve dist",
+    "test": "bun test",
+    "test:unit": "bun test test/unit/",
+    "test:e2e": "bun test test/e2e/ --timeout 60000"
   },
   "devDependencies": {
-    "@types/bun": "^1.0.0"
+    "@types/bun": "^1.0.0",
+    "puppeteer-core": "^24.37.5"
   }
 }
