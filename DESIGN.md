@@ -1,4 +1,4 @@
-# Design Document: anchor.js
+# Design Document: markproof
 
 ## Trust-Anchored Web Application Loader
 
@@ -22,7 +22,7 @@ Standard web applications place their root of trust in a URL. The browser fetche
 
 In all of these cases, the attacker can serve arbitrary JavaScript to every user who visits the URL. Service workers do not help — the browser's SW update lifecycle will eventually install the attacker's replacement, and once all tabs close, the new SW takes full control.
 
-**anchor.js solves this by moving the root of trust from the server to a client-side artifact: a JavaScript bookmarklet.**
+**markproof solves this by moving the root of trust from the server to a client-side artifact: a JavaScript bookmarklet.**
 
 ### Threat Model
 
@@ -42,9 +42,9 @@ In all of these cases, the attacker can serve arbitrary JavaScript to every user
 - All network-fetched content (until cryptographically verified)
 - All browser APIs accessible from the page context (until accessed through a verified clean context)
 
-### What anchor.js Is Not
+### What markproof Is Not
 
-anchor.js does not guarantee perpetual offline availability. Browser storage (IndexedDB) can be evicted by the browser under storage pressure or after extended periods of disuse (particularly on iOS, which may evict after ~2 weeks of inactivity). What anchor.js **does** guarantee is that whenever the application loads — whether from cache or from the network — the code that executes has been verified against the cryptographic keys embedded in the user's bookmarklet. An attacker who gains control of every server involved cannot cause the user to run unverified code.
+markproof does not guarantee perpetual offline availability. Browser storage (IndexedDB) can be evicted by the browser under storage pressure or after extended periods of disuse (particularly on iOS, which may evict after ~2 weeks of inactivity). What markproof **does** guarantee is that whenever the application loads — whether from cache or from the network — the code that executes has been verified against the cryptographic keys embedded in the user's bookmarklet. An attacker who gains control of every server involved cannot cause the user to run unverified code.
 
 ---
 
@@ -204,7 +204,7 @@ Browser testing (Edge, Safari, Firefox — macOS, February 2026) using `test-pro
 
 ### 4.4 Layered Defense
 
-Given that not all chain links are provably non-configurable, anchor.js uses a layered approach:
+Given that not all chain links are provably non-configurable, markproof uses a layered approach:
 
 1. **`delete` shadow removal**: Remove any attacker-created shadows on every property in the chain
 2. **Non-configurability verification**: Use the clean context's own `Object.getOwnPropertyDescriptor` (which is trustworthy if the context is genuine) to verify the parent context's properties
@@ -227,7 +227,7 @@ This is a known limitation documented in the threat model. Mitigations:
 
 ## 5. Update Modes
 
-anchor.js supports two update behaviors, chosen at install time:
+markproof supports two update behaviors, chosen at install time:
 
 ### 5.1 Mode A: Locked (Version-Pinned)
 
@@ -411,10 +411,10 @@ iOS does **not** support `javascript:` URLs as home screen icons. Home screen "A
 
 ### 10.1 Plugin API
 
-anchor.js provides a Bun build plugin that wraps `Bun.build()` and adds manifest generation, signing, and installer generation:
+markproof provides a Bun build plugin that wraps `Bun.build()` and adds manifest generation, signing, and installer generation:
 
 ```typescript
-import { buildOfflineApp } from 'anchorjs/plugin';
+import { buildOfflineApp } from 'markproof/plugin';
 
 await buildOfflineApp({
   entrypoints: ['./src/app.ts'],
@@ -555,7 +555,7 @@ The bootstrap fetches the resource, computes its SHA-256 hash, and verifies it m
 | Service Worker + Cache | SW file on server | No (SW update replaces it) | Yes (until SW updates) |
 | Subresource Integrity | `<script integrity>` in HTML | No (HTML itself is unverified) | No |
 | Browser extension | Extension store | Partially (store could remove) | Yes |
-| **anchor.js** | **Client-side bookmarklet** | **Yes** | **Yes (cache permitting)** |
+| **markproof** | **Client-side bookmarklet** | **Yes** | **Yes (cache permitting)** |
 
 ---
 
