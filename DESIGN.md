@@ -50,40 +50,27 @@ In all of these cases, the attacker can serve arbitrary JavaScript to every user
 
 ### 2.1 The Three Components
 
-```
-┌────────────────────────────────────────────────────────┐
-│                    TRUSTED ZONE                         │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │         Bookmarklet (javascript: URL)            │   │
-│  │  ┌──────────────┐ ┌──────────────────────────┐  │   │
-│  │  │ Bootstrap URL │ │ Bootstrap SRI Hash       │  │   │
-│  │  │              │ │ (sha256-BASE64)           │  │   │
-│  │  └──────────────┘ └──────────────────────────┘  │   │
-│  │  ┌──────────────────────────────────────────┐   │   │
-│  │  │ Navigates to data:text/html page         │   │   │
-│  │  │ (guaranteed clean browsing context)       │   │   │
-│  │  └──────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────┘   │
-│                                                         │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │     Bootstrap (SRI-verified, clean context)      │   │
-│  │  Ed25519 signature verification                  │   │
-│  │  Resource fetch + hash verification              │   │
-│  │  Embedded public key (build-time constant)       │   │
-│  └─────────────────────────────────────────────────┘   │
-│                                                         │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │         Application (signature-verified)          │   │
-│  │  HTML · CSS · JS — all hash-checked against      │   │
-│  │  the signed manifest before execution             │   │
-│  └─────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│                   UNTRUSTED ZONE                        │
-│  Origin URL · Network · Servers · CDNs · DNS           │
-│  (can deliver content, but cannot bypass verification)  │
-└────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph trusted ["TRUSTED ZONE"]
+    direction TB
+    subgraph bookmarklet ["Bookmarklet (javascript: URL)"]
+      bk1["Bootstrap URL + SRI Hash (sha256-BASE64)"]
+      bk2["Navigates to data:text/html page\n(guaranteed clean browsing context)"]
+    end
+    subgraph bootstrap ["Bootstrap (SRI-verified, clean context)"]
+      bs1["Ed25519 signature verification\nResource fetch + hash verification\nEmbedded public key (build-time constant)"]
+    end
+    subgraph app ["Application (signature-verified)"]
+      app1["HTML · CSS · JS — all hash-checked\nagainst the signed manifest before execution"]
+    end
+    bookmarklet -->|"SRI-verified load"| bootstrap
+    bootstrap -->|"hash-verified inject"| app
+  end
+  subgraph untrusted ["UNTRUSTED ZONE"]
+    u1["Origin URL · Network · Servers · CDNs · DNS"]
+  end
+  untrusted -.->|"delivers bytes\n(cannot bypass verification)"| trusted
 ```
 
 ### 2.2 Chain of Trust
@@ -273,27 +260,17 @@ await buildApp({
 
 ### 5.2 Build Pipeline
 
-```
-Source files ──→ Bun.build() ──→ Bundled JS/CSS
-                                      │
-Static files ─────────────────────────┤
-                                      ▼
-                               SHA-256 hashing
-                                      │
-                                      ▼
-                            Manifest generation
-                                      │
-                               Ed25519 signing
-                                      │
-                                      ▼
-                          bootstrap.js deployment
-                     (public key injected, SRI hash computed)
-                                      │
-                                      ▼
-                         Installer page generation
-                                      │
-                                      ▼
-                                 dist/ output
+```mermaid
+flowchart TD
+  src["Source files"] --> bun["Bun.build()"] --> bundled["Bundled JS/CSS"]
+  static["Static files"] --> merge((" "))
+  bundled --> merge
+  merge --> hash["SHA-256 hashing"]
+  hash --> manifest["Manifest generation"]
+  manifest --> sign["Ed25519 signing"]
+  sign --> bootstrap["bootstrap.js deployment\n(public key injected, SRI hash computed)"]
+  bootstrap --> installer["Installer page generation"]
+  installer --> dist["dist/ output"]
 ```
 
 ### 5.3 Key Management
@@ -363,5 +340,4 @@ Because only the manifest is signed and individual resources are hash-verified, 
 - **Multi-signature**: Require M-of-N signatures on manifests for high-security deployments
 - **Browser extension companion**: Optional extension that could provide origin-scoped storage for verified resources (recovering offline capability)
 - **iOS compatibility testing**: Verify data-URL bookmarklet behavior across iOS Safari versions
-- **Visual verification**: Explore displaying a user-chosen identity token within the data-URL page after app load
-- **Automated security testing**: CI pipeline that runs simulated attacks against the bookmarklet and bootstrap
+- **Dependency scanning and static analysis**: Automated CI checks for known vulnerabilities in dependencies and static analysis of the bootstrap and bookmarklet code to catch regressions
