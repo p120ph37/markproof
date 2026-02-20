@@ -1,5 +1,4 @@
 import { generateManifest, signManifest, sha256hex, canonicalizeManifest, type Manifest } from './manifest';
-import { getTemplateSources } from './bookmarklet';
 import type { BunPlugin, BuildConfig } from 'bun';
 
 export interface BuildOptions {
@@ -201,9 +200,6 @@ async function buildInstaller(
   const { template, generatorEntrypoint } = options.installer;
   const bootstrapUrl = options.originUrl.replace(/\/$/, '') + '/bootstrap.js';
 
-  // Get template source for embedding in the client-side generator
-  const { bookmarkletTemplate } = getTemplateSources();
-
   // Build the installer JS with embedded constants
   const installerBuild = await Bun.build({
     entrypoints: [generatorEntrypoint],
@@ -212,9 +208,7 @@ async function buildInstaller(
     naming: 'generator.[ext]',
     target: 'browser',
     define: {
-      '__BOOKMARKLET_TEMPLATE__': JSON.stringify(bookmarkletTemplate),
       '__BOOTSTRAP_HASH_BASE64__': JSON.stringify(bootstrapHashBase64),
-      '__ORIGIN_URL__': JSON.stringify(options.originUrl),
       '__BOOTSTRAP_URL__': JSON.stringify(bootstrapUrl),
       '__MANIFEST_HASH__': JSON.stringify(manifestHash),
       '__APP_NAME__': JSON.stringify(options.appName || 'App'),

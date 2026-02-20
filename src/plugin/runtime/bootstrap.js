@@ -10,13 +10,13 @@
 //   - fetch (native, unmodified Fetch API)
 //   - All built-in objects (Object, Array, Promise, etc.)
 //
-// It receives config from the data-URL page via:
-//   window.__markproofConfig = {
-//     originUrl, bootstrapUrl, updateMode, manifestHash
-//   }
+// Configuration is read from data attributes on the <script> element:
+//   src          - URL to this bootstrap script (used to derive content base URL)
+//   data-mode    - 'locked' or 'auto' (default: 'auto')
+//   data-hash    - SHA-256 hex hash of canonical manifest (for locked mode)
 //
 // Responsibilities:
-//   1. Read config
+//   1. Read config from script element
 //   2. Fetch and verify app manifest (Ed25519 signature)
 //   3. Fetch and hash-verify individual resources
 //   4. Render verified app in the current document
@@ -32,20 +32,12 @@
   var EMBEDDED_PUBLIC_KEY = '__PUBLIC_KEY__';
 
   // ================================================================
-  // Configuration (from data-URL inline script)
+  // Configuration (from script element attributes)
   // ================================================================
-  var config = window.__markproofConfig;
-  if (!config) {
-    throw new Error('Bootstrap: missing __markproofConfig');
-  }
-
-  var ORIGIN_URL = config.originUrl;
-  var BOOTSTRAP_URL = config.bootstrapUrl;
-  var UPDATE_MODE = config.updateMode; // 'locked' or 'auto'
-  var MANIFEST_HASH = config.manifestHash || '';
-
-  // Clean up config reference
-  delete window.__markproofConfig;
+  var script = document.currentScript;
+  var BOOTSTRAP_URL = script.src;
+  var UPDATE_MODE = script.getAttribute('data-mode') || 'auto';
+  var MANIFEST_HASH = script.getAttribute('data-hash') || '';
 
   // ================================================================
   // Utility: hex string to Uint8Array
