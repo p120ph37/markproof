@@ -458,8 +458,8 @@
         }
       }
 
-      // Inject HTML resources (look for index.html or main.html)
-      var htmlContent = resources['/index.html'] || resources['/main.html'] || '';
+      // Inject HTML resources (look for app.html, index.html, or main.html)
+      var htmlContent = resources['/app.html'] || resources['/index.html'] || resources['/main.html'] || '';
       if (htmlContent) {
         // Parse the HTML and extract body content
         var parser = new DOMParser();
