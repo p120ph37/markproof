@@ -7,7 +7,7 @@ import {
   TEST_DIST,
 } from '../helpers';
 import type { TestServer } from '../server';
-import type { Browser, Page } from 'puppeteer-core';
+import type { Browser, Page } from 'playwright-core';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
@@ -91,7 +91,7 @@ describe('bootstrap execution — unsigned auto mode', () => {
     const page = await browser.newPage();
     const requests = collectNetworkRequests(page);
     try {
-      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle', timeout: 15_000 });
 
       const manifestReq = requests.find((r) => r.url.includes('manifest.json'));
       expect(manifestReq).toBeDefined();
@@ -105,7 +105,7 @@ describe('bootstrap execution — unsigned auto mode', () => {
     const page = await browser.newPage();
     const requests = collectNetworkRequests(page);
     try {
-      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle', timeout: 15_000 });
 
       const manifest = JSON.parse(readFileSync(join(TEST_DIST, 'manifest.json'), 'utf-8'));
       const resourcePaths = Object.keys(manifest.resources);
@@ -124,7 +124,7 @@ describe('bootstrap execution — unsigned auto mode', () => {
   test('bootstrap renders the app HTML (canvas element present)', async () => {
     const page = await browser.newPage();
     try {
-      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 1000));
 
       const hasCanvas = await page.evaluate(() => document.querySelector('canvas') !== null);
@@ -137,7 +137,7 @@ describe('bootstrap execution — unsigned auto mode', () => {
   test('bootstrap injects CSS as style elements', async () => {
     const page = await browser.newPage();
     try {
-      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 1000));
 
       const styleCount = await page.evaluate(() => document.querySelectorAll('style').length);
@@ -150,7 +150,7 @@ describe('bootstrap execution — unsigned auto mode', () => {
   test('bootstrap injects JS as script elements', async () => {
     const page = await browser.newPage();
     try {
-      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 1000));
 
       const scriptCount = await page.evaluate(() => document.querySelectorAll('script').length);
@@ -164,7 +164,7 @@ describe('bootstrap execution — unsigned auto mode', () => {
     const page = await browser.newPage();
     const consoleMessages = collectConsoleMessages(page);
     try {
-      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 1000));
 
       const unsignedWarning = consoleMessages.find((m) =>
@@ -180,7 +180,7 @@ describe('bootstrap execution — unsigned auto mode', () => {
     const page = await browser.newPage();
     const consoleMessages = collectConsoleMessages(page);
     try {
-      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(bootstrapHtmlPage(), { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 1000));
 
       // Filter for error-level messages (excluding expected localStorage error from game)
@@ -207,7 +207,7 @@ describe('bootstrap execution — unsigned locked mode', () => {
     try {
       await page.setContent(
         bootstrapHtmlPage({ mode: 'locked', hash: manifestHash }),
-        { waitUntil: 'networkidle0', timeout: 15_000 }
+        { waitUntil: 'networkidle', timeout: 15_000 }
       );
       await new Promise((r) => setTimeout(r, 1000));
 
@@ -229,7 +229,7 @@ describe('bootstrap execution — unsigned locked mode', () => {
     try {
       await page.setContent(
         bootstrapHtmlPage({ mode: 'locked', hash: 'deadbeef0000000000000000000000000000000000000000000000000000dead' }),
-        { waitUntil: 'networkidle0', timeout: 15_000 }
+        { waitUntil: 'networkidle', timeout: 15_000 }
       );
       await new Promise((r) => setTimeout(r, 2000));
 
@@ -257,7 +257,7 @@ describe('bootstrap error handling', () => {
   onerror="document.body.textContent='Secure app load failed.'"></script>
 </body></html>`;
 
-      await page.setContent(wrongHtml, { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(wrongHtml, { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 2000));
 
       const bodyText = await page.evaluate(() => document.body?.textContent || '');
@@ -291,7 +291,7 @@ describe('bootstrap error handling', () => {
       const page = await browser.newPage();
       const consoleMessages = collectConsoleMessages(page);
 
-      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(html, { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 2000));
 
       const bodyText = await page.evaluate(() => document.body?.textContent || '');
@@ -335,7 +335,7 @@ describe('signed build — crypto.subtle detection', () => {
   onerror="document.body.textContent='Script load failed.'"></script>
 </body></html>`;
 
-      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page.setContent(html, { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 2000));
 
       const bodyText = await page.evaluate(() => document.body?.textContent || '');
@@ -371,7 +371,7 @@ describe('data: URL navigation (PNA behavior)', () => {
       const consoleMessages = collectConsoleMessages(page2);
       const requests = collectNetworkRequests(page2);
 
-      await page2.goto(bookmarkletUrl, { waitUntil: 'networkidle0', timeout: 15_000 });
+      await page2.goto(bookmarkletUrl, { waitUntil: 'networkidle', timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 1000));
 
       // The bootstrap.js is fetched but may not execute due to PNA
