@@ -336,8 +336,10 @@ Because only the manifest is signed and individual resources are hash-verified, 
 
 ## 9. Future Work
 
+- **Test suite**: Automated tests covering SHA-256 resource verification test vectors, Ed25519 signature round-trip tests, and canonicalization consistency tests
+- **Fresh security audit**: The data-URL architecture should be audited independently
 - **Key hierarchy**: Root key in bookmarklet signs delegate/rotation keys, allowing key rotation without new bookmarklets
 - **Multi-signature**: Require M-of-N signatures on manifests for high-security deployments
 - **Browser extension companion**: Optional extension that could provide origin-scoped storage for verified resources (recovering offline capability)
 - **iOS compatibility testing**: Verify data-URL bookmarklet behavior across iOS Safari versions
-- **Dependency scanning and static analysis**: Automated CI checks for known vulnerabilities in dependencies and static analysis of the bootstrap and bookmarklet code to catch regressions
+- **Dependency scanning and static analysis**: Automated CI checks for known vulnerabilities in dependencies and static analysis of the bootstrap and bookmarklet code (including the regex-based bookmarklet minifier) to catch regressions
