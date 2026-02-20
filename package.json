@@ -1,0 +1,15 @@
+{
+  "name": "html5-offline-app",
+  "version": "1.0.0",
+  "description": "Secure offline web app package management with bookmarklet-based trust anchoring",
+  "type": "module",
+  "scripts": {
+    "build": "bun run build.ts",
+    "keygen": "bun run src/plugin/keygen.ts",
+    "dev": "bun run --watch build.ts",
+    "preview": "bunx serve dist"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.0.0"
+  }
+}
