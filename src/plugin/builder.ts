@@ -1,5 +1,5 @@
-import { generateManifest, signManifest, sha256hex, type Manifest } from './manifest';
-import { generateBookmarklet, getTemplateSources } from './bookmarklet';
+import { generateManifest, signManifest, sha256hex, canonicalizeManifest, type Manifest } from './manifest';
+import { getTemplateSources } from './bookmarklet';
 import type { BunPlugin, BuildConfig } from 'bun';
 
 export interface BuildOptions {
@@ -36,8 +36,8 @@ export interface BuildOptions {
 export interface BuildResult {
   /** The generated manifest */
   manifest: Manifest;
-  /** SHA-256 hash of bootstrap.js */
-  bootstrapHash: string;
+  /** Base64-encoded SHA-256 hash of bootstrap.js (for SRI) */
+  bootstrapHashBase64: string;
   /** Map of output file paths */
   outputFiles: string[];
 }
@@ -49,7 +49,7 @@ export interface BuildResult {
  * 1. SHA-256 hashing of all output files
  * 2. Manifest generation with resource hashes
  * 3. Ed25519 signing of the manifest (if private key provided)
- * 4. Bootstrap.js deployment
+ * 4. Bootstrap.js deployment (with public key injection)
  * 5. Installer page generation with embedded bookmarklet generator
  */
 export async function buildApp(options: BuildOptions): Promise<BuildResult> {
@@ -103,15 +103,36 @@ export async function buildApp(options: BuildOptions): Promise<BuildResult> {
     console.log(`  Copied ${destName}`);
   }
 
-  // Step 3: Copy bootstrap.js runtime to output directory
-  const runtimeDir = path.join(path.dirname(new URL(import.meta.url).pathname), 'runtime');
-  const bootstrapSource = fs.readFileSync(path.join(runtimeDir, 'bootstrap.js'), 'utf8');
-  const bootstrapOutPath = path.join(outdir, 'bootstrap.js');
-  fs.writeFileSync(bootstrapOutPath, bootstrapSource);
-  const bootstrapHash = sha256hex(bootstrapSource);
-  console.log(`  Bootstrap hash: ${bootstrapHash}`);
+  // Step 3: Derive public key from private key if needed
+  let publicKeyBase64 = options.publicKey;
+  if (privateKey && !publicKeyBase64) {
+    const pubKeyObj = crypto.createPublicKey(privateKey);
+    const spkiDer = pubKeyObj.export({ type: 'spki', format: 'der' });
+    publicKeyBase64 = (spkiDer as Buffer).toString('base64');
+  }
 
-  // Step 4: Collect all output files and compute hashes
+  // Step 4: Copy bootstrap.js runtime to output directory, injecting public key
+  const runtimeDir = path.join(path.dirname(new URL(import.meta.url).pathname), 'runtime');
+  let bootstrapOutput = fs.readFileSync(path.join(runtimeDir, 'bootstrap.js'), 'utf8');
+
+  if (publicKeyBase64) {
+    bootstrapOutput = bootstrapOutput.replace(
+      "'__PUBLIC_KEY__'",
+      JSON.stringify(publicKeyBase64)
+    );
+    console.log(`  Public key embedded in bootstrap`);
+  }
+
+  const bootstrapOutPath = path.join(outdir, 'bootstrap.js');
+  fs.writeFileSync(bootstrapOutPath, bootstrapOutput);
+
+  // Hash the deployed bootstrap (with key embedded) — base64 for SRI
+  const bootstrapHashBase64 = crypto.createHash('sha256')
+    .update(bootstrapOutput)
+    .digest('base64');
+  console.log(`  Bootstrap hash (base64): ${bootstrapHashBase64}`);
+
+  // Step 5: Collect all output files and compute hashes
   const appFiles = new Map<string, Buffer>();
   const allOutputFiles: string[] = [];
 
@@ -130,16 +151,8 @@ export async function buildApp(options: BuildOptions): Promise<BuildResult> {
     allOutputFiles.push(filePath);
   }
 
-  // Step 5: Derive public key from private key if needed
-  let publicKeyBase64 = options.publicKey;
-  if (privateKey && !publicKeyBase64) {
-    const pubKeyObj = crypto.createPublicKey(privateKey);
-    const spkiDer = pubKeyObj.export({ type: 'spki', format: 'der' });
-    publicKeyBase64 = (spkiDer as Buffer).toString('base64');
-  }
-
   // Step 6: Generate manifest
-  let manifest = generateManifest(appFiles, version, publicKeyBase64);
+  let manifest = generateManifest(appFiles, version);
 
   // Step 7: Sign manifest if private key is available
   if (privateKey) {
@@ -156,14 +169,17 @@ export async function buildApp(options: BuildOptions): Promise<BuildResult> {
 
   // Step 8: Build installer page if configured
   if (options.installer) {
-    await buildInstaller(options, outdir, bootstrapHash, manifest);
+    // Compute manifest hash for locked mode
+    const manifestHash = sha256hex(canonicalizeManifest(manifest));
+
+    await buildInstaller(options, outdir, bootstrapHashBase64, manifestHash);
   }
 
   console.log(`Build complete: ${allOutputFiles.length} files in ${outdir}/`);
 
   return {
     manifest,
-    bootstrapHash,
+    bootstrapHashBase64,
     outputFiles: allOutputFiles,
   };
 }
@@ -174,8 +190,8 @@ export async function buildApp(options: BuildOptions): Promise<BuildResult> {
 async function buildInstaller(
   options: BuildOptions,
   outdir: string,
-  bootstrapHash: string,
-  manifest: Manifest,
+  bootstrapHashBase64: string,
+  manifestHash: string,
 ): Promise<void> {
   const fs = await import('fs');
   const path = await import('path');
@@ -185,8 +201,8 @@ async function buildInstaller(
   const { template, generatorEntrypoint } = options.installer;
   const bootstrapUrl = options.originUrl.replace(/\/$/, '') + '/bootstrap.js';
 
-  // Get template sources for embedding in the client-side generator
-  const { bookmarkletTemplate, pureSha256Source } = getTemplateSources();
+  // Get template source for embedding in the client-side generator
+  const { bookmarkletTemplate } = getTemplateSources();
 
   // Build the installer JS with embedded constants
   const installerBuild = await Bun.build({
@@ -197,10 +213,10 @@ async function buildInstaller(
     target: 'browser',
     define: {
       '__BOOKMARKLET_TEMPLATE__': JSON.stringify(bookmarkletTemplate),
-      '__PURE_SHA256_SOURCE__': JSON.stringify(pureSha256Source),
-      '__BOOTSTRAP_HASH__': JSON.stringify(bootstrapHash),
+      '__BOOTSTRAP_HASH_BASE64__': JSON.stringify(bootstrapHashBase64),
       '__ORIGIN_URL__': JSON.stringify(options.originUrl),
       '__BOOTSTRAP_URL__': JSON.stringify(bootstrapUrl),
+      '__MANIFEST_HASH__': JSON.stringify(manifestHash),
       '__APP_NAME__': JSON.stringify(options.appName || 'App'),
       '__APP_VERSION__': JSON.stringify(options.version || '1.0.0'),
     },

@@ -14,19 +14,18 @@ Standard web apps trust the server every time they load. If the server is compro
 
 ### How It Works
 
-1. User visits the origin URL and generates a personalized **bookmarklet** (a `javascript:` bookmark containing cryptographic keys and a visual identity token)
-2. The bookmarklet creates a **verified clean execution context** by exploiting non-configurable browser property chains and the `delete` operator (engine-guaranteed primitives that no JavaScript code can intercept)
-3. A **bootstrap script** is fetched and hash-verified using a pure-JS SHA-256 implementation built entirely from engine-guaranteed primitives — immune to API monkey-patching
+1. User visits the origin URL and generates a personalized **bookmarklet** (a `javascript:` bookmark containing the bootstrap URL and its cryptographic hash)
+2. The bookmarklet navigates to a **`data:text/html` page** — a guaranteed clean browsing context with an opaque origin, completely isolated from any compromised page JavaScript
+3. The data-URL page loads the **bootstrap script** via a `<script>` tag with browser-native **SRI (Subresource Integrity)** — the browser verifies the SHA-256 hash before execution
 4. The bootstrap runs in the clean context, verifies the **Ed25519 signature** on the application manifest, then fetches and hash-verifies each resource before execution
-5. Verified resources are cached in **IndexedDB** with HMAC-based tamper detection for offline use
 
 ### Key Properties
 
-- **Survives server compromise**: The server is explicitly untrusted. All content is signature-verified against keys in the bookmarklet.
+- **Survives server compromise**: The server is explicitly untrusted. All content is signature-verified against keys in the bootstrap.
 - **Survives domain seizure**: Even if a government seizes the domain, the bookmarklet's keys reject any unsigned replacement code.
-- **Works offline**: Verified resources are cached locally. (Browser storage eviction may require a network re-fetch, which is re-verified.)
+- **Guaranteed clean context**: The data-URL page provides a browser-guaranteed fresh JavaScript environment — no attacker code can influence it.
 - **CDN-friendly**: Only the manifest is signed. Individual resources are hash-verified, so they can be hosted on any CORS-enabled server (unpkg, jsDelivr, etc.) without trusting it.
-- **Open source threat model**: Security does not depend on attacker ignorance. The attacker is assumed to have full knowledge of the bookmarklet logic.
+- **Minimal dependencies**: Zero runtime dependencies. Only build dependency is `@types/bun`.
 
 See [DESIGN.md](DESIGN.md) for the full threat model, architecture, and security analysis.
 
@@ -104,7 +103,7 @@ Output in `dist/`:
 dist/
 ├── index.html       # Installer / bookmarklet generator page
 ├── manifest.json    # Signed manifest with resource hashes
-├── bootstrap.js     # Bootstrap script (hash-verified by bookmarklet)
+├── bootstrap.js     # Bootstrap script (SRI-verified by bookmarklet)
 ├── app.html         # App resources (hash-verified via manifest)
 ├── app.js           #   ↑
 └── style.css        #   ↑
@@ -112,7 +111,7 @@ dist/
 
 ### 5. Deploy
 
-Deploy `dist/` to any static host. The GitHub Actions workflow included in the demo handles this automatically for GitHub Pages:
+Deploy `dist/` to any static host that serves CORS headers. GitHub Pages works out of the box:
 
 ```yaml
 # .github/workflows/deploy.yml
@@ -126,16 +125,14 @@ env:
 ```typescript
 import { generateBookmarklet } from 'markproof/plugin';
 
-const { url, hmacKey } = generateBookmarklet({
+const { url } = generateBookmarklet({
   originUrl: 'https://yourname.github.io/yourapp',
   bootstrapUrl: 'https://yourname.github.io/yourapp/bootstrap.js',
-  bootstrapHash: 'abc123...', // From build output
-  visualToken: 'blue-dragon-42',
+  bootstrapHashBase64: 'abc123...', // From build output (base64)
   updateMode: 'auto', // or 'locked'
 });
 
 console.log(url);     // javascript:void(function(){...})()
-console.log(hmacKey); // 64-char hex string
 ```
 
 ---
@@ -151,15 +148,14 @@ src/
 │   ├── bookmarklet.ts          # Bookmarklet assembly + minification
 │   ├── keygen.ts               # Ed25519 keypair generation CLI
 │   └── runtime/                # Files deployed with every app
-│       ├── pure-sha256.js      # SHA-256 using only engine-guaranteed primitives
-│       ├── bookmarklet.js      # Bookmarklet template
-│       └── bootstrap.js        # Bootstrap (runs in verified clean context)
+│       ├── bookmarklet.js      # Bookmarklet template (data-URL + SRI)
+│       └── bootstrap.js        # Bootstrap (runs in clean data-URL context)
 ├── demo/                       # Demo: Dino Runner game
 │   ├── game.ts                 # Canvas-based endless runner
 │   ├── index.html              # Game HTML shell
 │   └── style.css
 └── installer/                  # Demo: installer page
-    ├── index.html              # Template with mimic-page anti-training
+    ├── index.html              # Template for bookmarklet generation
     └── generator.ts            # Client-side bookmarklet generator
 ```
 
@@ -170,7 +166,7 @@ src/
 | Mode | Behavior | Use Case |
 |------|----------|----------|
 | **Locked** | Pinned to exact version; even signed updates are rejected | Maximum security — code changes require new bookmarklet |
-| **Auto-update** | Accepts author-signed updates; HMAC-based cache tamper detection | Convenience — user trusts the author's signing key |
+| **Auto-update** | Accepts author-signed updates | Convenience — user trusts the author's signing key |
 
 ---
 
@@ -178,11 +174,10 @@ src/
 
 The trust-anchoring mechanism requires:
 - `javascript:` bookmarklet support (all major desktop browsers; Safari on iOS via bookmark bar)
-- Non-configurable `window.document` property (confirmed: Chrome/Edge, Safari, Firefox)
-- IndexedDB for offline caching
-- WebCrypto `crypto.subtle` for Ed25519 signature verification (in the clean context)
-
-The bookmarklet includes runtime validation and **aborts with a clear message** if the required property chain is not secure on the current browser.
+- `data:text/html` URL navigation from bookmarklets
+- Subresource Integrity (SRI) support for `<script>` tags
+- CORS-enabled resource hosting (`Access-Control-Allow-Origin: *`)
+- WebCrypto `crypto.subtle` for Ed25519 signature verification
 
 ---
 

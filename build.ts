@@ -56,6 +56,6 @@ for (const [path, resource] of Object.entries(result.manifest.resources)) {
   console.log(`  ${path}: ${resource.hash} (${resource.size} bytes)`);
 }
 console.log('');
-console.log(`Bootstrap hash: ${result.bootstrapHash}`);
+console.log(`Bootstrap hash (base64): ${result.bootstrapHashBase64}`);
 console.log(`Manifest signed: ${!!result.manifest.signature}`);
 console.log('');
