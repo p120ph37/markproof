@@ -36,10 +36,13 @@ In all of these cases, the attacker can serve arbitrary JavaScript to every user
 **Trusted components:**
 - The browser engine (standards-compliant, uncompromised)
 - The bookmarklet content (installed from an uncompromised source, immutable after creation)
+- The Ed25519 signing key (held offline or compartmentalized; not compromised alongside the server)
 
 **Explicitly untrusted:**
 - The origin URL (the page served at the URL the bookmarklet navigates from)
 - All network-fetched content (until cryptographically verified)
+
+**Key assumption:** The signing key must remain offline or otherwise compartmentalized from the server infrastructure. If the signing key is compromised (e.g., stored on the same server that is breached), the attacker can produce validly signed content and the protection is defeated. This means markproof is suitable for **static, offline-signed content** but **not for dynamic server-generated content** where the key would need to reside on the server.
 
 ---
 
@@ -178,6 +181,18 @@ The bookmarklet runs in the compromised page's context before navigating away. I
 
 Neither outcome allows the attacker to run unverified code. The worst case is denial of service, which the attacker could achieve anyway by simply not serving the page.
 
+### 3.5 Trust Anchor Reset on Bookmarklet Installation
+
+Every bookmarklet installation is a **trust anchor reset**. The user is placing their trust in whatever entity currently controls the content at the installer URL. This has critical implications:
+
+1. **Compromised installer page**: If the server is compromised at the time of bookmarklet installation, the user will receive a bookmarklet anchored to the attacker's keys. A compromised server that still displays the installer page is **visually indistinguishable** from a legitimate one — the page's appearance is not trustworthy.
+
+2. **Signature failure messaging**: The bookmarklet and bootstrap must clearly communicate that a **signature verification failure may indicate server compromise**. Users must understand that even if the server appears to still be serving the "install bookmarklet" page, the integrity of that page cannot be trusted. The only trustworthy signal is successful cryptographic verification.
+
+3. **TOFU model**: This follows a "trust on first use" model analogous to SSH host key verification. The initial installation must occur from an authentic, uncompromised source. All subsequent loads are verified against that trust anchor. Users should verify the source through out-of-band channels when possible.
+
+4. **Re-installation risk**: Any time a user installs a new bookmarklet, they are discarding their previous trust anchor and accepting a new one from whatever entity currently controls the URL. Users must understand this implication before re-installing.
+
 ---
 
 ## 4. Update Modes
@@ -197,7 +212,7 @@ The bookmarklet embeds both the bootstrap SRI hash and the SHA-256 hash of the c
 The bookmarklet embeds only the bootstrap SRI hash. The bootstrap accepts any manifest with a valid Ed25519 signature from the embedded public key.
 
 - **Author-signed updates are accepted automatically**
-- **Use case**: Convenience with trust. The user trusts the author's signing key and accepts signed updates, while being protected against server compromise by non-key-holders.
+- **Use case**: Convenience with trust. The user trusts the author's signing key and accepts signed updates. A server compromise by a non-key-holder cannot influence the application — only cause denial of service.
 
 ### 4.3 Manifest Structure
 
@@ -294,6 +309,8 @@ bun run src/plugin/keygen.ts
 
 The private key never appears in the repository. The public key is embedded in the bootstrap script at build time (before the SRI hash is computed).
 
+**Critical:** The private signing key must be held offline or compartmentalized from the deployment infrastructure (e.g., stored only as a CI secret, never on the production server). If the signing key is compromised alongside the server, the attacker can produce validly signed malicious content, defeating the protection entirely. markproof's security guarantee assumes the signing key and the serving infrastructure have independent compromise boundaries.
+
 ---
 
 ## 6. CDN-Friendly Resource Delivery
@@ -310,29 +327,33 @@ Because only the manifest is signed and individual resources are hash-verified, 
 |----------|-----------|----------------|
 | Clean execution context | data-URL navigation (opaque origin) | **Browser engine guarantee** |
 | Bootstrap integrity | Browser-native SRI (SHA-256) | **Cryptographic** |
-| Manifest authenticity | Ed25519 signature verification | **Cryptographic** |
+| Manifest authenticity | Ed25519 signature verification | **Cryptographic (assumes signing key uncompromised)** |
 | Resource integrity | SHA-256 hash verification against signed manifest | **Cryptographic** |
 | Bookmarklet immutability | Browser bookmark storage (no JS API to read/write) | **Platform guarantee** |
+| Protection against server compromise | Signature verification rejects unsigned/re-signed content | **Cryptographic (assumes signing key held offline; DoS still possible)** |
 
 ### Known Limitations
 
 1. **No offline capability**: Opaque origin has no storage access. Standard HTTP caching is the only optimization.
 2. **CORS requirement**: All resources must serve `Access-Control-Allow-Origin: *`.
 3. **Key rotation**: Requires distributing new bookmarklets.
-4. **Bookmarklet loss**: Must re-install from a trusted source.
+4. **Bookmarklet loss**: Must re-install from a trusted source — and any re-installation resets the trust anchor to whoever currently controls the installer URL.
 5. **Data-URL support**: Requires browser support for `javascript:` bookmarklets and `data:` URL navigation.
+6. **Static content only**: The signing key must be held offline/compartmentalized to maintain the security guarantee. This means markproof is not suitable for dynamic server-generated content, where the signing key would need to be accessible to the server (and would therefore be compromised alongside it).
+7. **Denial of service**: A server compromise cannot cause execution of unverified code, but can cause denial of service by serving content that fails verification. The protection is against *influence*, not *availability*.
+8. **Trust on first use**: The initial bookmarklet installation must occur from an uncompromised source. A compromised server can serve an attacker-controlled installer page that is visually indistinguishable from the legitimate one.
 
 ---
 
 ## 8. Comparison with Related Work
 
-| Approach | Trust Root | Survives Server Compromise? | Clean Context? |
-|----------|-----------|----------------------------|----------------|
+| Approach | Trust Root | Protects Against Server Compromise? | Clean Context? |
+|----------|-----------|--------------------------------------|----------------|
 | Standard HTTPS | Server TLS cert | No | N/A |
 | Service Worker + Cache | SW file on server | No (SW update replaces it) | N/A |
 | Subresource Integrity | `<script integrity>` in HTML | No (HTML itself is unverified) | N/A |
 | Browser extension | Extension store | Partially (store could remove) | Yes |
-| **markproof** | **Client-side bookmarklet** | **Yes** | **Yes (data-URL)** |
+| **markproof** | **Client-side bookmarklet** | **Yes (DoS still possible; requires offline signing key)** | **Yes (data-URL)** |
 
 ---
 
