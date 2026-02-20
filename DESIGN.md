@@ -342,4 +342,5 @@ Because only the manifest is signed and individual resources are hash-verified, 
 - **Multi-signature**: Require M-of-N signatures on manifests for high-security deployments
 - **Browser extension companion**: Optional extension that could provide origin-scoped storage for verified resources (recovering offline capability)
 - **iOS compatibility testing**: Verify data-URL bookmarklet behavior across iOS Safari versions
-- **Dependency scanning and static analysis**: Automated CI checks for known vulnerabilities in dependencies and static analysis of the bootstrap and bookmarklet code (including the regex-based bookmarklet minifier) to catch regressions
+- **Replace regex minifier with Bun**: The bookmarklet minifier currently uses regex-based comment/whitespace stripping; replace with Bun's built-in minification for correctness and maintainability
+- **Dependency scanning and static analysis**: Automated CI checks for known vulnerabilities in dependencies and static analysis of the bootstrap and bookmarklet code to catch regressions
