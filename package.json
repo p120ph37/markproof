@@ -1,7 +1,7 @@
 {
-  "name": "html5-offline-app",
+  "name": "anchorjs",
   "version": "1.0.0",
-  "description": "Secure offline web app package management with bookmarklet-based trust anchoring",
+  "description": "Trust-anchored web application loader — secure against server compromise, domain seizure, and MITM attacks",
   "type": "module",
   "scripts": {
     "build": "bun run build.ts",
