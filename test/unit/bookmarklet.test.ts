@@ -98,6 +98,22 @@ describe('generateBookmarklet', () => {
     expect(html).toContain('onerror=');
   });
 
+  test('uses proper script closing tag (not self-closing)', () => {
+    const { url } = generateBookmarklet(baseOptions);
+    const base64 = url.replace('data:text/html;base64,', '');
+    const html = base64Decode(base64);
+    // Self-closing <script/> is invalid HTML and prevents execution
+    expect(html).toContain('></script>');
+    expect(html).not.toContain('/>');
+  });
+
+  test('wraps script in body element for onerror access', () => {
+    const { url } = generateBookmarklet(baseOptions);
+    const base64 = url.replace('data:text/html;base64,', '');
+    const html = base64Decode(base64);
+    expect(html).toStartWith('<body>');
+  });
+
   test('generated URL is valid base64', () => {
     const { url } = generateBookmarklet(baseOptions);
     const base64 = url.replace('data:text/html;base64,', '');

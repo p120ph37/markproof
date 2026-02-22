@@ -432,6 +432,7 @@
   // Main: orchestrate the bootstrap process
   // ================================================================
   function main() {
+    console.log('markproof bootstrap: starting');
     ensureBody();
     showStatus('Initializing...');
 

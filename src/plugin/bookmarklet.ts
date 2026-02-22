@@ -18,7 +18,12 @@ function buildBookmarkletHtml(options: {
   updateMode: string;
   manifestHash: string;
 }): string {
-  let html = '<script src=' + options.bootstrapUrl
+  // Wrap in <body> so document.body exists for the onerror fallback.
+  // IMPORTANT: Must use ></script> (not self-closing />) because <script>
+  // is not a void element — a self-closing tag causes the HTML parser to
+  // leave the element open until EOF, which sets the "already started" flag
+  // and prevents execution entirely.
+  let html = '<body><script src=' + options.bootstrapUrl
     + ' integrity=sha256-' + options.bootstrapHashBase64
     + ' crossorigin=anonymous';
 
@@ -29,7 +34,7 @@ function buildBookmarkletHtml(options: {
     html += ' data-hash=' + options.manifestHash;
   }
 
-  html += " onerror=document.body.innerHTML='Secure\\x20app\\x20load\\x20failed.'/>";
+  html += " onerror=document.body.textContent='Secure\\x20app\\x20load\\x20failed.'></script>";
 
   return html;
 }

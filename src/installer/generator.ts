@@ -24,7 +24,12 @@ declare const __APP_VERSION__: string;
 function assembleBookmarklet(opts: {
   updateMode: string;
 }): string {
-  let html = '<script src=' + __BOOTSTRAP_URL__
+  // Wrap in <body> so document.body exists for the onerror fallback.
+  // IMPORTANT: Must use ></script> (not self-closing />) because <script>
+  // is not a void element — a self-closing tag causes the HTML parser to
+  // leave the element open until EOF, which sets the "already started" flag
+  // and prevents execution entirely.
+  let html = '<body><script src=' + __BOOTSTRAP_URL__
     + ' integrity=sha256-' + __BOOTSTRAP_HASH_BASE64__
     + ' crossorigin=anonymous';
 
@@ -35,7 +40,7 @@ function assembleBookmarklet(opts: {
     html += ' data-hash=' + __MANIFEST_HASH__;
   }
 
-  html += " onerror=document.body.innerHTML='Secure\\x20app\\x20load\\x20failed.'/>";
+  html += " onerror=document.body.textContent='Secure\\x20app\\x20load\\x20failed.'></script>";
 
   return 'data:text/html;base64,' + btoa(html);
 }

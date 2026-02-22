@@ -353,12 +353,12 @@ describe('signed build — crypto.subtle detection', () => {
   }, 60_000);
 });
 
-describe('data: URL navigation (PNA behavior)', () => {
-  test('documents that data: URL + PNA blocks bootstrap execution in non-secure localhost context', async () => {
-    // This test documents the Chrome Private Network Access restriction.
-    // data: URL pages have null origin (non-secure context) and Chrome blocks
-    // their requests to localhost (private network). In production, the server
-    // is a public HTTPS endpoint so PNA doesn't apply.
+describe('data: URL navigation', () => {
+  test('bookmarklet data URL executes bootstrap and renders app (PNA disabled)', async () => {
+    // With PNA (Private Network Access) checks disabled in the test browser,
+    // data: URL bookmarklets should fully execute: load bootstrap, fetch
+    // manifest, verify resources, and render the app.
+    // In production, the server is a public HTTPS endpoint so PNA doesn't apply.
     const page = await browser.newPage();
     try {
       await page.goto(server.url, { waitUntil: 'domcontentloaded' });
@@ -372,13 +372,15 @@ describe('data: URL navigation (PNA behavior)', () => {
       const requests = collectNetworkRequests(page2);
 
       await page2.goto(bookmarkletUrl, { waitUntil: 'networkidle', timeout: 15_000 });
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 2000));
 
-      // The bootstrap.js is fetched but may not execute due to PNA
+      // bootstrap.js should be fetched and executed
       const bootstrapReq = requests.find((r) => r.url.includes('bootstrap.js'));
+      expect(bootstrapReq).toBeDefined();
 
-      // manifest.json fetch won't happen if bootstrap didn't execute
+      // Bootstrap should fetch manifest.json
       const manifestReq = requests.find((r) => r.url.includes('manifest.json'));
+      expect(manifestReq).toBeDefined();
 
       // isSecureContext should be false for data: URL
       const isSecure = await page2.evaluate(() =>
@@ -386,12 +388,13 @@ describe('data: URL navigation (PNA behavior)', () => {
       );
       expect(isSecure).toBe(false);
 
-      // Document these facts for CI/debugging
-      console.log('data: URL test results:');
-      console.log(`  bootstrap.js fetched: ${!!bootstrapReq}`);
-      console.log(`  manifest.json fetched: ${!!manifestReq}`);
-      console.log(`  isSecureContext: ${isSecure}`);
-      console.log(`  Console: ${consoleMessages.join('; ') || '(none)'}`);
+      // Bootstrap should log its start message
+      const startMsg = consoleMessages.find((m) => m.includes('markproof bootstrap: starting'));
+      expect(startMsg).toBeDefined();
+
+      // App should render (canvas element from the demo game)
+      const hasCanvas = await page2.evaluate(() => document.querySelector('canvas') !== null);
+      expect(hasCanvas).toBe(true);
 
       await page2.close();
     } finally {
