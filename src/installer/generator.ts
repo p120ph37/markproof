@@ -35,7 +35,7 @@ function assembleBookmarklet(opts: {
     html += ' data-hash=' + __MANIFEST_HASH__;
   }
 
-  html += " onerror=document.body.innerHTML='Secure\\x20app\\x20load\\x20failed.'/>";
+  html += " onerror=document.body.innerHTML='Secure\\x20app\\x20load\\x20failed.'></script>";
 
   return 'data:text/html;base64,' + btoa(html);
 }

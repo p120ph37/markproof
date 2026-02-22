@@ -98,6 +98,17 @@ describe('generateBookmarklet', () => {
     expect(html).toContain('onerror=');
   });
 
+  test('uses closing </script> tag, not self-closing />', () => {
+    const { url } = generateBookmarklet(baseOptions);
+    const base64 = url.replace('data:text/html;base64,', '');
+    const html = base64Decode(base64);
+    // HTML5 does not support self-closing <script/> tags. A self-closing tag
+    // causes the parser to enter "script data" state waiting for </script>.
+    // Without it, the script is fetched (visible in devtools) but never executed.
+    expect(html).toContain('></script>');
+    expect(html).not.toContain('/>');
+  });
+
   test('generated URL is valid base64', () => {
     const { url } = generateBookmarklet(baseOptions);
     const base64 = url.replace('data:text/html;base64,', '');
