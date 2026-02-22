@@ -29,7 +29,7 @@ function buildBookmarkletHtml(options: {
     html += ' data-hash=' + options.manifestHash;
   }
 
-  html += " onerror=document.body.innerHTML='Secure\\x20app\\x20load\\x20failed.'/>";
+  html += " onerror=document.body.innerHTML='Secure\\x20app\\x20load\\x20failed.'></script>";
 
   return html;
 }
